@@ -18,23 +18,27 @@ $ sudo apt install clang libbpf-dev bpftool bpfcc-tools libbpfcc libbpfcc-dev li
 > 	shift = ((__u32)a >> (b * 3));
 ```
 
-1. Generate `vmlinux.h` ([libbpf/libbpf-bootstrap#172](https://github.com/libbpf/libbpf-bootstrap/issues/172#issuecomment-1526749499))
+### Build, register, and set CCA
 
 ```sh
-$ sudo bpftool btf dump file /sys/kernel/btf/vmlinux format c > bpf_cubic/vmlinux.h
-```
-
-2. Compile `bpf_cubic`
-
-```sh
+# Build eBPF program
 $ cd bpf_cubic/
-bpf_cubic $ clang-14 -target bpf -I/usr/include/$(uname -m)-linux-gnu -g -O2 -o bpf_cubic.o -c bpf_cubic.c
+$ make build
+sudo bpftool btf dump file /sys/kernel/btf/vmlinux format c > vmlinux.h
+clang-14 -target bpf -I/usr/include/-linux-gnu -g -O2 -o bpf_cubic.o -c bpf_cubic.c
+
+# Register eBPF program
+$ sudo bpftool struct_ops register bpf_cubic.o
+Registered tcp_congestion_ops cubic id 101
+
+# Set TCP congestion control algorithm to bpf_cubic
+$ sudo sysctl -w net.ipv4.tcp_congestion_control=bpf_cubic
+net.ipv4.tcp_congestion_control = bpf_cubic
 ```
 
-3. Load eBPF program
+### Unregister CCA
 
-```sh
-bpf_cubic $ sudo bpftool struct_ops register bpf_cubic.o
 ```
-
-To unregister the program, list the currently registered programs with `sudo bpftool struct_ops list`, fetch the ID, and unregister with `sudo bpftool struct_ops unregister id <ID>`.
+$ sudo bpftool struct_ops unregister name cubic
+Unregistered tcp_congestion_ops cubic id 101
+```
