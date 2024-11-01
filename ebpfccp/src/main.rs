@@ -1,8 +1,9 @@
 use libbpf_rs::{
     skel::{OpenSkel, SkelBuilder},
-    Result,
+    Result, RingBufferBuilder,
 };
-use std::mem::MaybeUninit;
+use plain::Plain;
+use std::{mem::MaybeUninit, time::Duration};
 
 #[allow(unused_imports)]
 mod datapath {
@@ -12,13 +13,22 @@ mod datapath {
     ));
 }
 
+unsafe impl Plain for datapath::types::signal {}
+
+fn handle_signal(data: &[u8]) -> i32 {
+    let mut event = datapath::types::signal::default();
+    plain::copy_from_bytes(&mut event, data).expect("Data buffer was too short");
+    dbg!(event.now);
+    0
+}
+
 fn main() -> Result<()> {
     let mut skel_builder = datapath::DatapathSkelBuilder::default();
 
     skel_builder.obj_builder.debug(true); // Enable debug mode
 
     let mut open_object = MaybeUninit::uninit();
-    let mut open_skel = skel_builder.open(&mut open_object)?;
+    let open_skel = skel_builder.open(&mut open_object)?;
 
     let mut skel = open_skel.load()?;
     let _link = skel.maps.ebpfccp.attach_struct_ops()?;
@@ -26,10 +36,11 @@ fn main() -> Result<()> {
     // At this point, the BPF program is loaded and attached to the kernel.
     // We should be able to see the CCA in `/proc/sys/net/ipv4/tcp_available_congestion_control`.
 
-    // Sleep for 3 seconds
-    std::thread::sleep(std::time::Duration::from_secs(3));
+    let mut ring_builder = RingBufferBuilder::new();
+    ring_builder.add(&skel.maps.signals, handle_signal)?;
+    let ring = ring_builder.build()?;
 
-    // After this, the BPF program will be detached from the kernel.
-
-    Ok(())
+    loop {
+        ring.poll(Duration::from_millis(100))?;
+    }
 }

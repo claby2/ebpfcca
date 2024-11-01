@@ -1,6 +1,17 @@
 #include "bpf_cubic.h"
 #include <bpf/bpf_tracing.h>
 
+struct signal {
+  u64 now;
+};
+
+struct signal _signal = {0}; // dummy signal
+
+struct {
+  __uint(type, BPF_MAP_TYPE_RINGBUF);
+  __uint(max_entries, sizeof(struct signal) * 1024);
+} signals SEC(".maps");
+
 SEC("struct_ops")
 void BPF_PROG(init, struct sock *sk) { bpf_cubic_init(sk); }
 
@@ -26,6 +37,13 @@ void BPF_PROG(set_state, struct sock *sk, __u8 new_state) {
 
 SEC("struct_ops")
 void BPF_PROG(pckts_acked, struct sock *sk, const struct ack_sample *sample) {
+  struct signal *sig;
+  sig = bpf_ringbuf_reserve(&signals, sizeof(struct signal), 0);
+  if (!sig)
+    return;
+  sig->now = bpf_ktime_get_ns();
+  bpf_ringbuf_submit(sig, 0);
+
   bpf_cubic_acked(sk, sample);
 }
 
