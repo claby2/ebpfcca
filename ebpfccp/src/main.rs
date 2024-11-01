@@ -17,6 +17,7 @@ unsafe impl Plain for datapath::types::signal {}
 
 fn handle_signal(data: &[u8]) -> i32 {
     let mut event = datapath::types::signal::default();
+    // plain will transform the bytes into the struct as defined in the BPF program.
     plain::copy_from_bytes(&mut event, data).expect("Data buffer was too short");
     dbg!(event.now);
     0
@@ -30,6 +31,9 @@ fn main() -> Result<()> {
     let mut open_object = MaybeUninit::uninit();
     let open_skel = skel_builder.open(&mut open_object)?;
 
+    // We could technically modify the BPF program through open_skel here, I do not see much
+    // reason for this for now.
+
     let mut skel = open_skel.load()?;
     let _link = skel.maps.ebpfccp.attach_struct_ops()?;
 
@@ -41,6 +45,7 @@ fn main() -> Result<()> {
     let ring = ring_builder.build()?;
 
     loop {
+        // Poll all open ring buffers until timeout is reached or when there are no more events.
         ring.poll(Duration::from_millis(100))?;
     }
 }

@@ -5,8 +5,10 @@ struct signal {
   u64 now;
 };
 
-struct signal _signal = {0}; // dummy signal
+// dummy signal, this is needed so user-land can access the struct information
+struct signal _signal = {0};
 
+// Ring buffer to send signal events to user-land
 struct {
   __uint(type, BPF_MAP_TYPE_RINGBUF);
   __uint(max_entries, sizeof(struct signal) * 1024);
@@ -38,12 +40,18 @@ void BPF_PROG(set_state, struct sock *sk, __u8 new_state) {
 SEC("struct_ops")
 void BPF_PROG(pckts_acked, struct sock *sk, const struct ack_sample *sample) {
   struct signal *sig;
+
+  // Reserve bytes in the ring buffer and get a pointer to the reserved space
   sig = bpf_ringbuf_reserve(&signals, sizeof(struct signal), 0);
   if (!sig)
     return;
+
   sig->now = bpf_ktime_get_ns();
+
+  // Submit the reserved space to the ring buffer
   bpf_ringbuf_submit(sig, 0);
 
+  // Call the original function... for now, cubic just runs in the background
   bpf_cubic_acked(sk, sample);
 }
 
