@@ -1,8 +1,10 @@
+use anyhow::Result;
 use libbpf_rs::{
     skel::{OpenSkel, SkelBuilder},
-    Result, RingBufferBuilder,
+    RingBufferBuilder, UserRingBuffer,
 };
 use plain::Plain;
+use rustyline::{error::ReadlineError, DefaultEditor};
 use std::{mem::MaybeUninit, time::Duration};
 
 #[allow(unused_imports)]
@@ -14,6 +16,8 @@ mod datapath {
 }
 
 unsafe impl Plain for datapath::types::signal {}
+unsafe impl Plain for datapath::types::command_type {}
+unsafe impl Plain for datapath::types::command_request {}
 
 fn handle_signal(data: &[u8]) -> i32 {
     let mut event = datapath::types::signal::default();
@@ -40,12 +44,56 @@ fn main() -> Result<()> {
     // At this point, the BPF program is loaded and attached to the kernel.
     // We should be able to see the CCA in `/proc/sys/net/ipv4/tcp_available_congestion_control`.
 
-    let mut ring_builder = RingBufferBuilder::new();
-    ring_builder.add(&skel.maps.signals, handle_signal)?;
-    let ring = ring_builder.build()?;
+    let mut signals_ring_builder = RingBufferBuilder::new();
+    signals_ring_builder.add(&skel.maps.signals, handle_signal)?;
+    let signals_ring = signals_ring_builder.build()?;
 
-    loop {
+    std::thread::spawn(move || loop {
         // Poll all open ring buffers until timeout is reached or when there are no more events.
-        ring.poll(Duration::from_millis(100))?;
+        if let Err(e) = signals_ring.poll(Duration::from_millis(100)) {
+            eprintln!("Error polling ring buffer: {:?}", e);
+            std::process::exit(1);
+        }
+    });
+
+    let command_requests_ring = UserRingBuffer::new(&skel.maps.command_requests)?;
+
+    let mut rl = DefaultEditor::new()?;
+    loop {
+        let readline = rl.readline(">> ");
+        match readline {
+            Ok(line) => {
+                let tokens: Vec<&str> = line.split_whitespace().collect();
+                match tokens.as_slice() {
+                    ["exit"] => break,
+                    ["now"] => {
+                        let mut command_request = command_requests_ring
+                            .reserve(size_of::<datapath::types::command_request>())?;
+                        let bytes = command_request.as_mut();
+                        let request =
+                            plain::from_mut_bytes::<datapath::types::command_request>(bytes)
+                                .map_err(|e| anyhow::anyhow!(format!("{:?}", e)))?;
+                        request.t.write(datapath::types::command_type::now);
+                        command_requests_ring.submit(command_request)?;
+                    }
+                    _ => {
+                        eprintln!("Invalid command");
+                    }
+                }
+            }
+            Err(ReadlineError::Interrupted) => {
+                println!("CTRL-C");
+                break;
+            }
+            Err(ReadlineError::Eof) => {
+                println!("CTRL-D");
+                break;
+            }
+            Err(err) => {
+                eprintln!("Error: {:?}", err);
+                break;
+            }
+        }
     }
+    Ok(())
 }

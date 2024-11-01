@@ -24,6 +24,20 @@ struct signal {
 // dummy signal, this is needed so user-land can access the struct information
 struct signal _signal = {0};
 
+enum command_type {
+  now = 0,
+} _command_type = {0};
+
+struct command_request {
+  enum command_type t;
+  u32 value;
+} _command_request = {0};
+
+struct command_response {
+  enum command_type t;
+  u32 value;
+};
+
 // This represents the per-socket private data
 // It can be accessed with inet_csk_ca(sk)
 struct ccp {

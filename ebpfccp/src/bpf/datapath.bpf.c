@@ -9,6 +9,16 @@ struct {
   __uint(max_entries, sizeof(struct signal) * 1024);
 } signals SEC(".maps");
 
+struct {
+  __uint(type, BPF_MAP_TYPE_USER_RINGBUF);
+  __uint(max_entries, sizeof(struct command_request) * 1024);
+} command_requests SEC(".maps");
+
+struct {
+  __uint(type, BPF_MAP_TYPE_RINGBUF);
+  __uint(max_entries, sizeof(struct command_response) * 1024);
+} command_responses SEC(".maps");
+
 void load_signal(struct sock *sk, const struct rate_sample *rs) {
   struct tcp_sock *tp = tcp_sk(sk);
   struct ccp *ca = inet_csk_ca(sk);
@@ -63,8 +73,20 @@ __u32 BPF_PROG(ssthresh, struct sock *sk) { return 0; }
 SEC("struct_ops")
 void BPF_PROG(set_state, struct sock *sk, __u8 new_state) { return; }
 
+static long command_request_callback(struct buf_dynptr *dynptr, void *context) {
+  const struct command_request *req;
+  req = bpf_dynptr_data(dynptr, 0, sizeof(*req));
+  if (!req)
+    return 0;
+
+  // TODO: Handle request?
+
+  return 0;
+}
+
 SEC("struct_ops")
 void BPF_PROG(pckts_acked, struct sock *sk, const struct ack_sample *sample) {
+  bpf_user_ringbuf_drain(&command_requests, command_request_callback, NULL, 0);
   return;
 }
 

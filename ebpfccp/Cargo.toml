@@ -4,8 +4,10 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+anyhow = "1.0.92"
 libbpf-rs = "0.24.6"
 plain = "0.2.3"
+rustyline = "14.0.0"
 
 [build-dependencies]
 libbpf-cargo = "0.24.6"
