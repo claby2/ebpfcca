@@ -21,7 +21,7 @@ fn main() -> Result<()> {
     let mut open_skel = skel_builder.open(&mut open_object)?;
 
     let mut skel = open_skel.load()?;
-    let _link = skel.maps.cubic.attach_struct_ops()?;
+    let _link = skel.maps.ebpfccp.attach_struct_ops()?;
 
     // At this point, the BPF program is loaded and attached to the kernel.
     // We should be able to see the CCA in `/proc/sys/net/ipv4/tcp_available_congestion_control`.
