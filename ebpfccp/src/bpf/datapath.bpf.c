@@ -34,6 +34,14 @@ void load_signal(struct sock *sk, const struct rate_sample *rs) {
   sig->bytes_acked = tp->bytes_acked - ca->last_bytes_acked;
   ca->last_bytes_acked = tp->bytes_acked;
 
+  sig->packets_misordered = tp->sacked_out >= ca->last_sacked_out
+                                ? tp->sacked_out - ca->last_sacked_out
+                                : 0;
+
+  ca->last_sacked_out = tp->sacked_out;
+
+  sig->packets_acked = rs->acked_sacked - sig->packets_misordered;
+
   // Submit the reserved space to the ring buffer
   bpf_ringbuf_submit(sig, 0);
 }

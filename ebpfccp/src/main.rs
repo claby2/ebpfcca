@@ -19,7 +19,7 @@ fn handle_signal(data: &[u8]) -> i32 {
     let mut event = datapath::types::signal::default();
     // plain will transform the bytes into the struct as defined in the BPF program.
     plain::copy_from_bytes(&mut event, data).expect("Data buffer was too short");
-    dbg!(event.bytes_acked);
+    dbg!(event);
     0
 }
 

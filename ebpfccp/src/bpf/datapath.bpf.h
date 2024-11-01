@@ -10,6 +10,12 @@ char _license[] SEC("license") = "GPL";
 struct signal {
   // newly acked, in-order bytes
   u32 bytes_acked;
+
+  // newly acked, in-order packets
+  u32 packets_acked;
+
+  // out-of-order packets
+  u32 packets_misordered;
   // TODO: Add more congestion primitives
   //       See `ccp_primitives` in ccp-project/libccp cpp.h
   //       for more information
@@ -18,7 +24,7 @@ struct signal {
 // dummy signal, this is needed so user-land can access the struct information
 struct signal _signal = {0};
 
-// This represents the as the per-socket private data
+// This represents the per-socket private data
 // It can be accessed with inet_csk_ca(sk)
 struct ccp {
   // control
