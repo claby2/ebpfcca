@@ -10,7 +10,7 @@ int num_flows = 0;
 struct {
   __uint(type, BPF_MAP_TYPE_HASH);
   __uint(max_entries, MAX_FLOWS);
-  __type(key, u64); // socket id (sid)
+  __type(key, u64); // socket addr
   __type(value, struct connection);
 } connections SEC(".maps");
 
@@ -58,16 +58,16 @@ void BPF_PROG(init, struct sock *sk) {
   // u32, so the Rust user-space code will have to handle this conversion.
   // I do not think this should be too difficult, but it is something to keep
   // mind.
-  u64 sid = (u64)sk;
+  u64 sock_addr = (u64)sk;
 
-  if (bpf_map_lookup_elem(&connections, &sid)) {
+  if (bpf_map_lookup_elem(&connections, &sock_addr)) {
     // Connection already exists
     return;
   }
 
   // Add the connection to the map
   struct connection conn = {.cwnd = tp->snd_cwnd * tp->mss_cache};
-  bpf_map_update_elem(&connections, &sid, &conn, BPF_ANY);
+  bpf_map_update_elem(&connections, &sock_addr, &conn, BPF_ANY);
   num_flows++;
 
   // Notify user-space that a new connection has been created
@@ -78,7 +78,7 @@ void BPF_PROG(init, struct sock *sk) {
     return;
 
   // Fill in the message
-  evt->sid = sid;
+  evt->sock_addr = sock_addr;
   evt->init_cwnd = tp->snd_cwnd * tp->mss_cache;
   evt->mss = tp->mss_cache;
   evt->src_ip = tp->inet_conn.icsk_inet.inet_saddr;
@@ -155,8 +155,8 @@ __u32 BPF_PROG(undo_cwnd, struct sock *sk) { return 0; }
 SEC("struct_ops")
 void BPF_PROG(release, struct sock *sk) {
   // Remove the connection from the map
-  u64 sid = (u64)sk;
-  bpf_map_delete_elem(&connections, &sid);
+  u64 sock_addr = (u64)sk;
+  bpf_map_delete_elem(&connections, &sock_addr);
   num_flows--;
 
   // Notify user-space that the connection has been freed
@@ -165,7 +165,7 @@ void BPF_PROG(release, struct sock *sk) {
       bpf_ringbuf_reserve(&free_conn_events, sizeof(struct free_conn_event), 0);
   if (!evt)
     return;
-  evt->sid = sid;
+  evt->sock_addr = sock_addr;
 
   bpf_ringbuf_submit(evt, 0);
 }

@@ -27,7 +27,7 @@ struct signal {
 
 // New connection message
 struct create_conn_event {
-  u64 sid;
+  u64 sock_addr;
   u32 init_cwnd;
   u32 mss;
   u32 src_ip;
@@ -38,7 +38,7 @@ struct create_conn_event {
 
 // Free connection message
 struct free_conn_event {
-  u64 sid;
+  u64 sock_addr;
 } _free_conn_event = {0};
 
 // This represents the per-socket private data
