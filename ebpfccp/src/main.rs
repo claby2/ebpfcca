@@ -1,7 +1,7 @@
 use anyhow::Result;
 use libbpf_rs::{
     skel::{OpenSkel, SkelBuilder},
-    RingBufferBuilder, UserRingBuffer,
+    MapCore, MapFlags, RingBufferBuilder,
 };
 use plain::Plain;
 use rustyline::{error::ReadlineError, DefaultEditor};
@@ -16,14 +16,14 @@ mod datapath {
 }
 
 unsafe impl Plain for datapath::types::signal {}
-unsafe impl Plain for datapath::types::command_type {}
-unsafe impl Plain for datapath::types::command_request {}
+unsafe impl Plain for datapath::types::connection {}
+unsafe impl Plain for datapath::types::create_message {}
 
 fn handle_signal(data: &[u8]) -> i32 {
     let mut event = datapath::types::signal::default();
     // plain will transform the bytes into the struct as defined in the BPF program.
     plain::copy_from_bytes(&mut event, data).expect("Data buffer was too short");
-    dbg!(event);
+    // dbg!(event);
     0
 }
 
@@ -56,8 +56,6 @@ fn main() -> Result<()> {
         }
     });
 
-    let command_requests_ring = UserRingBuffer::new(&skel.maps.command_requests)?;
-
     let mut rl = DefaultEditor::new()?;
     loop {
         let readline = rl.readline(">> ");
@@ -66,15 +64,16 @@ fn main() -> Result<()> {
                 let tokens: Vec<&str> = line.split_whitespace().collect();
                 match tokens.as_slice() {
                     ["exit"] => break,
-                    ["now"] => {
-                        let mut command_request = command_requests_ring
-                            .reserve(size_of::<datapath::types::command_request>())?;
-                        let bytes = command_request.as_mut();
-                        let request =
-                            plain::from_mut_bytes::<datapath::types::command_request>(bytes)
-                                .map_err(|e| anyhow::anyhow!(format!("{:?}", e)))?;
-                        request.t.write(datapath::types::command_type::now);
-                        command_requests_ring.submit(command_request)?;
+                    ["list", "connections"] => {
+                        for key in skel.maps.connections.keys() {
+                            let conn_bytes = skel.maps.connections.lookup(&key, MapFlags::ANY)?;
+                            if let Some(conn_bytes) = conn_bytes {
+                                let conn =
+                                    plain::from_bytes::<datapath::types::connection>(&conn_bytes)
+                                        .map_err(|e| anyhow::anyhow!(format!("{:?}", e)))?;
+                                dbg!(conn);
+                            }
+                        }
                     }
                     _ => {
                         eprintln!("Invalid command");

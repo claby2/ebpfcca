@@ -7,6 +7,10 @@
 
 char _license[] SEC("license") = "GPL";
 
+struct connection {
+  u32 cwnd;
+} _connection = {0};
+
 struct signal {
   // newly acked, in-order bytes
   u32 bytes_acked;
@@ -19,24 +23,18 @@ struct signal {
   // TODO: Add more congestion primitives
   //       See `ccp_primitives` in ccp-project/libccp cpp.h
   //       for more information
-};
+} _signal = {0};
 
-// dummy signal, this is needed so user-land can access the struct information
-struct signal _signal = {0};
-
-enum command_type {
-  now = 0,
-} _command_type = {0};
-
-struct command_request {
-  enum command_type t;
-  u32 value;
-} _command_request = {0};
-
-struct command_response {
-  enum command_type t;
-  u32 value;
-};
+// New connection message
+struct create_message {
+  u64 sid;
+  u32 init_cwnd;
+  u32 mss;
+  u32 src_ip;
+  u32 src_port;
+  u32 dst_ip;
+  u32 dst_port;
+} _create_message = {0};
 
 // This represents the per-socket private data
 // It can be accessed with inet_csk_ca(sk)
@@ -61,6 +59,7 @@ static inline struct tcp_sock *tcp_sk(const struct sock *sk) {
 
 #define MTU 1500
 #define S_TO_US 1000000
+#define MAX_FLOWS 1024
 
 // Copied this from the kernel source code
 #define do_div(n, base)                                                        \
