@@ -127,7 +127,11 @@ void load_signal(struct sock *sk, const struct rate_sample *rs) {
 
   ca->last_sacked_out = tp->sacked_out;
 
-  sig->packets_acked = rs->acked_sacked - sig->packets_misordered;
+  // TODO: look into why bpf_core_read must be used here
+  //       For some reason, this is only needed when I run with Docker...
+  u64 acked_sacked;
+  bpf_core_read(&acked_sacked, sizeof(acked_sacked), &rs->acked_sacked);
+  sig->packets_acked = acked_sacked - sig->packets_misordered;
 
   // Submit the reserved space to the ring buffer
   bpf_ringbuf_submit(sig, 0);
