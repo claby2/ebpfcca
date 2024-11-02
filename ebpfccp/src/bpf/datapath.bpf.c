@@ -23,8 +23,14 @@ struct {
 // Used to notify user-space when a new connection is created
 struct {
   __uint(type, BPF_MAP_TYPE_RINGBUF);
-  __uint(max_entries, sizeof(struct create_message) * 1024);
-} create_messages SEC(".maps");
+  __uint(max_entries, sizeof(struct create_conn_event) * 1024);
+} create_conn_events SEC(".maps");
+
+// Used to notify user-space when a connection is freed
+struct {
+  __uint(type, BPF_MAP_TYPE_RINGBUF);
+  __uint(max_entries, sizeof(struct free_conn_event) * 1024);
+} free_conn_events SEC(".maps");
 
 SEC("struct_ops")
 void BPF_PROG(init, struct sock *sk) {
@@ -59,30 +65,32 @@ void BPF_PROG(init, struct sock *sk) {
     return;
   }
 
-  struct create_message *msg;
-  msg = bpf_ringbuf_reserve(&create_messages, sizeof(struct create_message), 0);
-  if (!msg)
-    return;
-
   // Add the connection to the map
   struct connection conn = {.cwnd = tp->snd_cwnd * tp->mss_cache};
   bpf_map_update_elem(&connections, &sid, &conn, BPF_ANY);
   num_flows++;
 
+  // Notify user-space that a new connection has been created
+  struct create_conn_event *evt;
+  evt = bpf_ringbuf_reserve(&create_conn_events,
+                            sizeof(struct create_conn_event), 0);
+  if (!evt)
+    return;
+
   // Fill in the message
-  msg->sid = sid;
-  msg->init_cwnd = tp->snd_cwnd * tp->mss_cache;
-  msg->mss = tp->mss_cache;
-  msg->src_ip = tp->inet_conn.icsk_inet.inet_saddr;
-  msg->src_port = tp->inet_conn.icsk_inet.inet_sport;
+  evt->sid = sid;
+  evt->init_cwnd = tp->snd_cwnd * tp->mss_cache;
+  evt->mss = tp->mss_cache;
+  evt->src_ip = tp->inet_conn.icsk_inet.inet_saddr;
+  evt->src_port = tp->inet_conn.icsk_inet.inet_sport;
   // NOTE: This is a somewhat hacky way to get the destination IP and port
   //       The conventional "kernel module" way would be to use
   //       icsk_inet.inet_daddr and icsk_inet.inet_dport, but those are not
   //       available in vmlinux.h
-  msg->dst_ip = sk->__sk_common.skc_daddr;
-  msg->dst_port = sk->__sk_common.skc_dport;
+  evt->dst_ip = sk->__sk_common.skc_daddr;
+  evt->dst_port = sk->__sk_common.skc_dport;
 
-  bpf_ringbuf_submit(msg, 0);
+  bpf_ringbuf_submit(evt, 0);
 }
 
 SEC("struct_ops")
@@ -150,6 +158,16 @@ void BPF_PROG(release, struct sock *sk) {
   u64 sid = (u64)sk;
   bpf_map_delete_elem(&connections, &sid);
   num_flows--;
+
+  // Notify user-space that the connection has been freed
+  struct free_conn_event *evt;
+  evt =
+      bpf_ringbuf_reserve(&free_conn_events, sizeof(struct free_conn_event), 0);
+  if (!evt)
+    return;
+  evt->sid = sid;
+
+  bpf_ringbuf_submit(evt, 0);
 }
 
 SEC(".struct_ops")

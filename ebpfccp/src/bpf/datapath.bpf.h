@@ -26,7 +26,7 @@ struct signal {
 } _signal = {0};
 
 // New connection message
-struct create_message {
+struct create_conn_event {
   u64 sid;
   u32 init_cwnd;
   u32 mss;
@@ -34,7 +34,12 @@ struct create_message {
   u32 src_port;
   u32 dst_ip;
   u32 dst_port;
-} _create_message = {0};
+} _create_conn_event = {0};
+
+// Free connection message
+struct free_conn_event {
+  u64 sid;
+} _free_conn_event = {0};
 
 // This represents the per-socket private data
 // It can be accessed with inet_csk_ca(sk)
