@@ -137,9 +137,18 @@ void load_signal(struct sock *sk, const struct rate_sample *rs) {
   bpf_ringbuf_submit(sig, 0);
 }
 
+void set_cwnd(struct sock *sk) {
+  struct tcp_sock *tp = tcp_sk(sk);
+
+  u64 sock_addr = (u64)sk;
+  connection *conn = bpf_map_lookup_elem(&connections, &sock_addr);
+  tp->cwnd = conn->cwnd;
+}
+
 SEC("struct_ops")
 void BPF_PROG(cong_control, struct sock *sk, const struct rate_sample *rs) {
   load_signal(sk, rs);
+  set_cwnd(sk);
 }
 
 SEC("struct_ops")

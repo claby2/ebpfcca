@@ -34,6 +34,10 @@ impl SocketMap {
         self.addr_to_id.get(&addr).copied()
     }
 
+    fn get_addr(&self, id: SocketId) -> Option<Addr> {
+        self.id_to_addr.get(&id).copied()
+    }
+
     fn unused_id(&self) -> SocketId {
         let mut id = 0;
         while self.id_to_addr.contains_key(&id) {
@@ -100,5 +104,16 @@ impl Manager {
             socket_map.remove_addr(event.sock_addr);
             0
         })
+    }
+
+    pub fn update_cwnd_for_socket(&self, skel: &datapath::DatapathSkel, id: SocketId, cwnd: u32) {
+        let socket_addr = self.socket_map.lock().unwrap().get_addr(id)
+        if let Some(addr) = socket_addr {
+            let conn = datapath::types::connection { 
+                cwnd: cwnd,
+            };
+            let conn_bytes = unsafe { any_as_u8_slice(&conn) };
+            skel.maps.connections.update(&addr, conn_bytes, MapFlags::ANY);
+        }
     }
 }
