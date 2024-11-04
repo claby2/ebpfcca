@@ -141,8 +141,8 @@ void set_cwnd(struct sock *sk) {
   struct tcp_sock *tp = tcp_sk(sk);
 
   u64 sock_addr = (u64)sk;
-  connection *conn = bpf_map_lookup_elem(&connections, &sock_addr);
-  tp->cwnd = conn->cwnd;
+  struct connection *conn = bpf_map_lookup_elem(&connections, &sock_addr);
+  tp->cwnd = conn->cwnd / tp->mss_cache;
 }
 
 SEC("struct_ops")
