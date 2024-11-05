@@ -1,5 +1,5 @@
 use anyhow::Result;
-use libbpf_rs::{MapCore, RingBufferBuilder};
+use libbpf_rs::{MapCore, RingBufferBuilder, MapFlags};
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
@@ -34,6 +34,10 @@ impl SocketMap {
         self.addr_to_id.get(&addr).copied()
     }
 
+    fn get_addr(&self, id: SocketId) -> Option<SocketAddr> {
+        self.id_to_addr.get(&id).copied()
+    }
+
     fn unused_id(&self) -> SocketId {
         let mut id = 0;
         while self.id_to_addr.contains_key(&id) {
@@ -41,6 +45,18 @@ impl SocketMap {
         }
         id
     }
+
+    fn get_all_ids(&self) -> Vec<SocketId> {
+        self.id_to_addr.keys().copied().collect()
+    }
+}
+
+// copied from https://stackoverflow.com/a/42186553
+unsafe fn any_as_u8_slice<T: Sized>(p: &T) -> &[u8] {
+    ::core::slice::from_raw_parts(
+        (p as *const T) as *const u8,
+        ::core::mem::size_of::<T>(),
+    )
 }
 
 #[derive(Debug, Default)]
@@ -100,5 +116,20 @@ impl Manager {
             socket_map.remove_addr(event.sock_addr);
             0
         })
+    }
+
+    pub fn update_cwnd_for_socket(&self, skel: &datapath::DatapathSkel, id: SocketId, cwnd: u32) {
+        let socket_addr = self.socket_map.lock().unwrap().get_addr(id);
+        if let Some(addr) = socket_addr {
+            let conn = datapath::types::connection { 
+                cwnd: cwnd,
+            };
+            let conn_bytes = unsafe { any_as_u8_slice(&conn) };
+            let _ = skel.maps.connections.update(&addr.to_ne_bytes(), conn_bytes, MapFlags::ANY);
+        }
+    }
+
+    pub fn get_all_socket_ids(&self) -> Vec<SocketId> {
+        self.socket_map.lock().unwrap().get_all_ids()
     }
 }

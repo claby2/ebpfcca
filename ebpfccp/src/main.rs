@@ -57,7 +57,20 @@ fn main() -> Result<()> {
                                 );
                             }
                         }
-                    }
+                    },
+                    ["set", "cwnd", socket_id, cwnd_bytes] => {
+                        if *socket_id == "all" {
+                            let cwnd_bytes: u32 = cwnd_bytes.parse()?;
+                            for key in manager.get_all_socket_ids() {
+                                manager.update_cwnd_for_socket(&skel, key, cwnd_bytes);
+                            }
+                        } else {
+                            let socket_id: u32 = socket_id.parse()?;
+                            let cwnd_bytes: u32 = cwnd_bytes.parse()?;
+                            manager.update_cwnd_for_socket(&skel, socket_id, cwnd_bytes);
+                        }
+                        
+                    },
                     _ => {
                         eprintln!("Invalid command");
                     }
