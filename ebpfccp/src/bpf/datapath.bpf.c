@@ -142,6 +142,10 @@ void set_cwnd(struct sock *sk) {
 
   u64 sock_addr = (u64)sk;
   struct connection *conn = bpf_map_lookup_elem(&connections, &sock_addr);
+  if (conn == NULL) {
+    // Connection does not exist
+    return;
+  }
   tp->snd_cwnd = conn->cwnd / tp->mss_cache;
 }
 

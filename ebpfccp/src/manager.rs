@@ -45,6 +45,10 @@ impl SocketMap {
         }
         id
     }
+
+    fn get_all_ids(&self) -> Vec<SocketId> {
+        self.id_to_addr.keys().copied().collect()
+    }
 }
 
 // copied from https://stackoverflow.com/a/42186553
@@ -121,7 +125,11 @@ impl Manager {
                 cwnd: cwnd,
             };
             let conn_bytes = unsafe { any_as_u8_slice(&conn) };
-            skel.maps.connections.update(&addr, conn_bytes, MapFlags::ANY);
+            let _ = skel.maps.connections.update(&addr.to_ne_bytes(), conn_bytes, MapFlags::ANY);
         }
+    }
+
+    pub fn get_all_socket_ids(&self) -> Vec<SocketId> {
+        self.socket_map.lock().unwrap().get_all_ids()
     }
 }
