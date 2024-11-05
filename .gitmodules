@@ -1,0 +1,3 @@
+[submodule "ebpfccp/libccp"]
+	path = ebpfccp/libccp
+	url = https://github.com/ccp-project/libccp
