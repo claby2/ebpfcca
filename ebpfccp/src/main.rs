@@ -1,4 +1,6 @@
 mod datapath;
+#[allow(warnings)]
+mod libccp;
 mod manager;
 
 use crate::manager::Manager;

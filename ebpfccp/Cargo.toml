@@ -2,6 +2,7 @@
 name = "ebpfccp"
 version = "0.1.0"
 edition = "2021"
+build = "build.rs"
 
 [dependencies]
 anyhow = "1.0.92"
@@ -10,5 +11,7 @@ plain = "0.2.3"
 rustyline = "14.0.0"
 
 [build-dependencies]
+bindgen = "0.70.1"
+cc = "1.1.35"
 libbpf-cargo = "0.24.6"
 vmlinux = { version = "0.0", git = "https://github.com/libbpf/vmlinux.h.git", rev = "172793d6a409d98d1cfb843c80df73733e9f832f" }
