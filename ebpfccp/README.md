@@ -17,7 +17,7 @@ https://github.com/ccp-project/ccp-kernel Commit 264554a50a247a512c8d22248b92a84
 
 ```sh
 # Build eBPF-CCP
-$ cargo run --release
+$ cargo build --release
 
 # Register eBPF-CCP and open REPL
 $ cd target/release
