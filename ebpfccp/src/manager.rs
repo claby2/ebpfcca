@@ -1,5 +1,5 @@
 use anyhow::Result;
-use libbpf_rs::{MapCore, RingBufferBuilder};
+use libbpf_rs::{MapCore, RingBufferBuilder, MapFlags};
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
@@ -34,7 +34,7 @@ impl SocketMap {
         self.addr_to_id.get(&addr).copied()
     }
 
-    fn get_addr(&self, id: SocketId) -> Option<Addr> {
+    fn get_addr(&self, id: SocketId) -> Option<SocketAddr> {
         self.id_to_addr.get(&id).copied()
     }
 
@@ -45,6 +45,14 @@ impl SocketMap {
         }
         id
     }
+}
+
+// copied from https://stackoverflow.com/a/42186553
+unsafe fn any_as_u8_slice<T: Sized>(p: &T) -> &[u8] {
+    ::core::slice::from_raw_parts(
+        (p as *const T) as *const u8,
+        ::core::mem::size_of::<T>(),
+    )
 }
 
 #[derive(Debug, Default)]
@@ -107,7 +115,7 @@ impl Manager {
     }
 
     pub fn update_cwnd_for_socket(&self, skel: &datapath::DatapathSkel, id: SocketId, cwnd: u32) {
-        let socket_addr = self.socket_map.lock().unwrap().get_addr(id)
+        let socket_addr = self.socket_map.lock().unwrap().get_addr(id);
         if let Some(addr) = socket_addr {
             let conn = datapath::types::connection { 
                 cwnd: cwnd,
