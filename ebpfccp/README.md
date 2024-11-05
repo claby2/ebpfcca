@@ -12,7 +12,6 @@ $ sudo apt install clang libbpf-dev bpftool bpfcc-tools libbpfcc libbpfcc-dev li
 
 > The eBPF program under bpf/ is partially adopted from the CCP Kernel Module Datapath
 https://github.com/ccp-project/ccp-kernel Commit 264554a50a247a512c8d22248b92a84512e4d01c
-```
 
 ### Build, register, and set CCA
 
