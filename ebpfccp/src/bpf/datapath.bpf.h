@@ -8,6 +8,7 @@
 char _license[] SEC("license") = "GPL";
 
 struct connection {
+  // in unit of bytes, note that kernel tp->snd_cwnd is in packets - translate by * (1/tp->mss)
   u32 cwnd;
 } _connection = {0};
 

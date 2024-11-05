@@ -142,7 +142,7 @@ void set_cwnd(struct sock *sk) {
 
   u64 sock_addr = (u64)sk;
   struct connection *conn = bpf_map_lookup_elem(&connections, &sock_addr);
-  tp->cwnd = conn->cwnd / tp->mss_cache;
+  tp->snd_cwnd = conn->cwnd / tp->mss_cache;
 }
 
 SEC("struct_ops")
