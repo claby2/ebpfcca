@@ -4,7 +4,7 @@ use libbpf_rs::{
     MapCore, OpenObject, RingBufferBuilder,
 };
 use plain::Plain;
-use std::{mem::MaybeUninit, time::Duration};
+use std::{mem::MaybeUninit, ops::Deref, time::Duration};
 
 // Encapsulating this inside an internal module to avoid leaking everything.
 mod internal {
@@ -24,6 +24,14 @@ pub struct Signal(internal::types::signal);
 pub struct Connection(internal::types::connection);
 
 pub struct CreateConnEvent(internal::types::create_conn_event);
+
+impl Deref for CreateConnEvent {
+    type Target = internal::types::create_conn_event;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
 
 pub struct FreeConnEvent(internal::types::free_conn_event);
 

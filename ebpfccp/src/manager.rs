@@ -3,15 +3,17 @@ use libbpf_rs::{MapCore, MapFlags, RingBufferBuilder};
 use libccp::{self, CongestionOps, DatapathOps};
 use std::{
     collections::HashMap,
+    fs,
     os::unix::net::UnixDatagram,
-    sync::{Arc, Mutex},
+    path::Path,
+    sync::{Arc, RwLock},
     time::Duration,
 };
 
 use crate::datapath::Skeleton;
 
-const FROM_CCP_SOCKET: &str = "/tmp/ccp/0/out";
-const TO_CCP_SOCKET: &str = "/tmp/ccp/0/in";
+const PORTUS_SOCKET: &str = "/tmp/ccp/portus";
+const EBPFCCP_SOCKET: &str = "/tmp/ccp/ebpfccp";
 
 /// Socket interface to communicate with CCP congestion control algorithm
 #[derive(Debug)]
@@ -21,14 +23,19 @@ pub struct SocketOperator {
 
 impl SocketOperator {
     pub fn new() -> Result<Self> {
-        let socket = UnixDatagram::bind(TO_CCP_SOCKET)?;
+        // Remove the socket if it already exists
+        if Path::new(EBPFCCP_SOCKET).exists() {
+            fs::remove_file(EBPFCCP_SOCKET)?;
+        }
+
+        let socket = UnixDatagram::bind(EBPFCCP_SOCKET)?;
         Ok(Self { socket })
     }
 }
 
 impl DatapathOps for SocketOperator {
     fn send_msg(&mut self, msg: &[u8]) {
-        todo!("Send message to CCP congestion control algorithm");
+        self.socket.send_to(msg, PORTUS_SOCKET).unwrap();
     }
 }
 
@@ -47,17 +54,19 @@ impl CongestionOps for Connection {
 }
 
 pub struct Manager {
-    datapath: libccp::Datapath,
+    datapath: Arc<RwLock<libccp::Datapath>>,
 }
 
 impl Manager {
     pub fn new() -> Result<Self> {
         let so = SocketOperator::new()?;
-        let datapath = libccp::DatapathBuilder::default()
+        let dp = libccp::DatapathBuilder::default()
             .with_ops(so)
             .with_id(0)
             .init()?;
-        Ok(Self { datapath })
+        Ok(Self {
+            datapath: Arc::new(RwLock::new(dp)),
+        })
     }
 
     pub fn start(&mut self, skeleton: &Skeleton) -> Result<()> {
@@ -65,9 +74,19 @@ impl Manager {
             println!("Received signal");
         })?;
 
-        skeleton.poll_create_conn_events(move |event| {
-            println!("Received create connection event");
-        })?;
+        {
+            let dp = self.datapath.clone();
+            skeleton.poll_create_conn_events(move |event| {
+                println!("Received create connection event");
+                let dp = dp.read().unwrap();
+                let conn = Connection {};
+                let flow_info = libccp::FlowInfo::default()
+                    .with_init_cwnd(event.init_cwnd)
+                    .with_mss(event.mss)
+                    .with_four_tuple(event.src_ip, event.src_port, event.dst_ip, event.dst_port);
+                libccp::Connection::start(&dp, conn, flow_info).unwrap();
+            })?;
+        };
 
         skeleton.poll_free_conn_events(move |event| {
             println!("Received free connection event");
