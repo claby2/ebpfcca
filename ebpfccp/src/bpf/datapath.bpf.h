@@ -21,11 +21,45 @@ struct signal {
   // newly acked, in-order packets
   u32 packets_acked;
 
+  // out-of-order bytes
+  u32 bytes_misordered;
+
   // out-of-order packets
   u32 packets_misordered;
-  // TODO: Add more congestion primitives
-  //       See `ccp_primitives` in ccp-project/libccp cpp.h
-  //       for more information
+
+  // bytes corresponding to ecn-marked packets
+  u32 ecn_bytes; // TODO: add ECN support
+
+  // ecn-marked packets
+  u32 ecn_packets; // TODO: add ECN support
+
+  // an estimate of the number of packets lost
+  u32 lost_pkts_sample;
+
+  bool was_timeout; // TODO: I think we need to handle this differently, perhaps
+                    // another event buffer
+
+  // a recent sample of the round-trip time
+  u64 rtt_sample_us;
+
+  // sample of the sending rate, bytes / s
+  u64 rate_outgoing;
+  // sample of the receiving rate, bytes / s
+  u64 rate_incoming;
+
+  // the number of actual bytes in flight
+  u32 bytes_in_flight;
+  // the number of actual packets in flight
+  u32 packets_in_flight;
+
+  // the target congestion window to maintain, in bytes
+  u32 snd_cwnd;
+  // target rate to maintain, in bytes/s
+  u64 snd_rate; // TODO: Might be unused?
+
+  // amount of data available to be sent
+  // NOT per-packet - an absolute measurement
+  u32 bytes_pending;
 } _signal = {0};
 
 // New connection message
@@ -63,6 +97,14 @@ static inline void *inet_csk_ca(const struct sock *sk) {
 
 static inline struct tcp_sock *tcp_sk(const struct sock *sk) {
   return (struct tcp_sock *)sk;
+}
+
+static inline unsigned int tcp_left_out(const struct tcp_sock *tp) {
+  return tp->sacked_out + tp->lost_out;
+}
+
+static inline unsigned int tcp_packets_in_flight(const struct tcp_sock *tp) {
+  return tp->packets_out - tcp_left_out(tp) + tp->retrans_out;
 }
 
 #define MTU 1500

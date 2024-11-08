@@ -159,8 +159,17 @@ impl Manager {
                 let primitives = libccp::Primitives::default()
                     .with_bytes_acked(signal.bytes_acked)
                     .with_packets_acked(signal.packets_acked)
-                    .with_packets_misordered(signal.packets_misordered);
-                // TODO: Add more fields to primitives
+                    .with_bytes_misordered(signal.bytes_misordered)
+                    .with_packets_misordered(signal.packets_misordered)
+                    .with_lost_pkts_sample(signal.lost_pkts_sample)
+                    .with_rtt_sample_us(signal.rtt_sample_us)
+                    .with_rate_outgoing(signal.rate_outgoing)
+                    .with_rate_incoming(signal.rate_incoming)
+                    .with_bytes_in_flight(signal.bytes_in_flight)
+                    .with_packets_in_flight(signal.packets_in_flight)
+                    .with_snd_cwnd(signal.snd_cwnd)
+                    .with_bytes_pending(signal.bytes_pending);
+                // TODO: Add more primitives (just a few more I believe)
 
                 conn.load_primitives(primitives);
             }

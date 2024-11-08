@@ -96,7 +96,7 @@ void BPF_PROG(init, struct sock *sk) {
 SEC("struct_ops")
 void BPF_PROG(cwnd_event, struct sock *sk, enum tcp_ca_event event) { return; }
 
-void load_signal(struct sock *sk, const struct rate_sample *rs) {
+static void load_signal(struct sock *sk, const struct rate_sample *rs) {
   struct tcp_sock *tp = tcp_sk(sk);
   struct ccp *ca = inet_csk_ca(sk);
 
@@ -127,11 +127,31 @@ void load_signal(struct sock *sk, const struct rate_sample *rs) {
 
   ca->last_sacked_out = tp->sacked_out;
 
-  // TODO: look into why bpf_core_read must be used here
-  //       For some reason, this is only needed when I run with Docker...
-  u64 acked_sacked;
-  bpf_core_read(&acked_sacked, sizeof(acked_sacked), &rs->acked_sacked);
-  sig->packets_acked = acked_sacked - sig->packets_misordered;
+  sig->packets_acked = rs->acked_sacked - sig->packets_misordered;
+  sig->bytes_misordered = sig->packets_misordered * tp->mss_cache;
+  sig->lost_pkts_sample = rs->losses;
+  sig->rtt_sample_us = rs->rtt_us;
+  if (rin != 0)
+    sig->rate_outgoing = rin;
+  if (rout != 0)
+    sig->rate_incoming = rout;
+
+  sig->bytes_in_flight = tcp_packets_in_flight(tp) * tp->mss_cache;
+  sig->packets_in_flight = tcp_packets_in_flight(tp);
+
+  // TODO: Why do we need to check snd_cwnd > 0?
+  if (tp->snd_cwnd > 0) {
+    sig->snd_cwnd = tp->snd_cwnd * tp->mss_cache;
+
+    // TODO: I think this is needed to take into account wrapping
+    //       This is marked `unlikely` in the kernel module, maybe we should do
+    //       something similar?
+    if (tp->snd_una > tp->write_seq) {
+      sig->bytes_pending = ((u32)~0U) - (tp->snd_una - tp->write_seq);
+    } else {
+      sig->bytes_pending = (tp->write_seq - tp->snd_una);
+    }
+  }
 
   // Submit the reserved space to the ring buffer
   bpf_ringbuf_submit(sig, 0);
