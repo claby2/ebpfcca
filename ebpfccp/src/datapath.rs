@@ -1,7 +1,7 @@
 use anyhow::Result;
 use libbpf_rs::{
     skel::{OpenSkel, SkelBuilder},
-    MapCore, MapFlags, OpenObject, RingBufferBuilder,
+    Link, MapCore, MapFlags, OpenObject, RingBufferBuilder,
 };
 use plain::Plain;
 use std::{
@@ -66,6 +66,12 @@ pub struct Skeleton {
     skel: Arc<RwLock<&'static internal::DatapathSkel<'static>>>,
     tx: Sender<ConnectionMessage>,
     rx: Option<Receiver<ConnectionMessage>>,
+
+    // This represents the link to the struct_ops program.
+    // As long as this is alive, the struct_ops program will be attached to the kernel.
+    // There is no actual use for this in the current implementation, but it is kept here
+    // to ensure that the struct_ops program stays alive while the Skeleton is alive.
+    _link: Link,
 }
 
 // Generic poll function that can be used to poll any ring buffer.
@@ -105,7 +111,7 @@ impl Skeleton {
         // reason for this for now.
 
         let mut skel = open_skel.load()?;
-        let _link = skel.maps.ebpfccp.attach_struct_ops()?;
+        let link = skel.maps.ebpfccp.attach_struct_ops()?;
 
         // At this point, the BPF program is loaded and attached to the kernel.
         // We should be able to see the CCA in `/proc/sys/net/ipv4/tcp_available_congestion_control`.
@@ -119,6 +125,7 @@ impl Skeleton {
             skel: Arc::new(RwLock::new(skel_static_ref)),
             tx,
             rx: Some(rx),
+            _link: link,
         })
     }
 
