@@ -107,6 +107,9 @@ static void load_signal(struct sock *sk, const struct rate_sample *rs) {
   if (!sig)
     return;
 
+  u64 sock_addr = (u64)sk;
+  sig->sock_addr = sock_addr;
+
   u64 rin = 0;  // send bandwidth in bytes per second
   u64 rout = 0; // recv bandwidth in bytes per second
   u64 ack_us = rs->rcv_interval_us;
