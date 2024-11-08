@@ -77,14 +77,31 @@ impl Manager {
     }
 
     pub fn start(&mut self, skeleton: &Skeleton) -> Result<()> {
-        skeleton.poll_signals(move |_signal| {
-            println!("Received signal");
-        })?;
+        {
+            let connections = self.connections.clone();
+            skeleton.poll_signals(move |signal| {
+                // A connection has received a signal: update the connection's primitives
+                println!("Received signal");
+                signal.sock_addr;
+                let mut connections = connections.write().unwrap();
+
+                if let Some(conn) = connections.get_mut(&signal.sock_addr) {
+                    let primitives = libccp::Primitives::default()
+                        .with_bytes_acked(signal.bytes_acked)
+                        .with_packets_acked(signal.packets_acked)
+                        .with_packets_misordered(signal.packets_misordered);
+                    // TODO: Add more fields to primitives
+
+                    conn.load_primitives(primitives);
+                }
+            })?;
+        };
 
         {
             let dp = self.datapath.clone();
             let connections = self.connections.clone();
             skeleton.poll_create_conn_events(move |event| {
+                // A new flow has been created: create a new connection and store it
                 println!("Received create connection event");
                 let dp = dp.read().unwrap();
 
@@ -102,9 +119,15 @@ impl Manager {
             })?;
         };
 
-        skeleton.poll_free_conn_events(move |_event| {
-            println!("Received free connection event");
-        })?;
+        {
+            let connections = self.connections.clone();
+            skeleton.poll_free_conn_events(move |event| {
+                println!("Received free connection event");
+                // Remove the connection
+                let mut connections = connections.write().unwrap();
+                connections.remove(&event.sock_addr);
+            })?;
+        };
 
         Ok(())
     }
