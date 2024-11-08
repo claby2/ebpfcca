@@ -121,4 +121,6 @@ static inline unsigned int tcp_packets_in_flight(const struct tcp_sock *tp) {
     __rem;                                                                     \
   })
 
+#define max(x, y) ((x) > (y) ? (x) : (y))
+
 #endif

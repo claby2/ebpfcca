@@ -179,7 +179,10 @@ void BPF_PROG(cong_control, struct sock *sk, const struct rate_sample *rs) {
 }
 
 SEC("struct_ops")
-__u32 BPF_PROG(ssthresh, struct sock *sk) { return 0; }
+__u32 BPF_PROG(ssthresh, struct sock *sk) {
+  const struct tcp_sock *tp = tcp_sk(sk);
+  return max(tp->snd_cwnd >> 1U, 2U);
+}
 
 SEC("struct_ops")
 void BPF_PROG(set_state, struct sock *sk, __u8 new_state) { return; }
@@ -190,7 +193,10 @@ void BPF_PROG(pckts_acked, struct sock *sk, const struct ack_sample *sample) {
 }
 
 SEC("struct_ops")
-__u32 BPF_PROG(undo_cwnd, struct sock *sk) { return 0; }
+__u32 BPF_PROG(undo_cwnd, struct sock *sk) {
+  const struct tcp_sock *tp = tcp_sk(sk);
+  return max(tp->snd_cwnd, tp->snd_ssthresh << 1);
+}
 
 SEC("struct_ops")
 void BPF_PROG(release, struct sock *sk) {
