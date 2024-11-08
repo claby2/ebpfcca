@@ -3,9 +3,11 @@ use libccp::{self, CongestionOps, DatapathOps};
 use std::{
     collections::HashMap,
     fs,
+    ops::Deref,
     os::unix::net::UnixDatagram,
     path::Path,
     sync::{mpsc::Sender, Arc, RwLock},
+    thread,
 };
 
 use crate::datapath::{ConnectionMessage, Skeleton};
@@ -15,12 +17,12 @@ const EBPFCCP_SOCKET: &str = "/tmp/ccp/ebpfccp";
 
 /// Socket interface to communicate with CCP congestion control algorithm
 #[derive(Debug)]
-pub struct SocketOperator {
+struct SocketOperator {
     socket: UnixDatagram,
 }
 
 impl SocketOperator {
-    pub fn new() -> Result<Self> {
+    fn new() -> Result<Self> {
         // Remove the socket if it already exists
         if Path::new(EBPFCCP_SOCKET).exists() {
             fs::remove_file(EBPFCCP_SOCKET)?;
@@ -29,11 +31,42 @@ impl SocketOperator {
         let socket = UnixDatagram::bind(EBPFCCP_SOCKET)?;
         Ok(Self { socket })
     }
+
+    fn send(&mut self, msg: &[u8]) -> Result<usize> {
+        let size = self.socket.send_to(msg, PORTUS_SOCKET)?;
+        Ok(size)
+    }
+
+    fn recv(&self, buf: &mut [u8]) -> Result<usize> {
+        let size = self.socket.recv(buf)?;
+        Ok(size)
+    }
 }
 
-impl DatapathOps for SocketOperator {
+#[derive(Debug)]
+struct SharedSocketOperator(Arc<RwLock<SocketOperator>>);
+
+impl Clone for SharedSocketOperator {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
+
+impl DatapathOps for SharedSocketOperator {
     fn send_msg(&mut self, msg: &[u8]) {
-        self.socket.send_to(msg, PORTUS_SOCKET).unwrap();
+        self.0
+            .write()
+            .unwrap()
+            .send(msg)
+            .expect("Failed to send message");
+    }
+}
+
+impl Deref for SharedSocketOperator {
+    type Target = Arc<RwLock<SocketOperator>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 
@@ -69,16 +102,17 @@ impl CongestionOps for Connection {
 
 /// Manager for handling connections and datapath operations
 pub struct Manager {
-    datapath: Arc<RwLock<&'static libccp::Datapath>>,
-
+    datapath: Arc<&'static libccp::Datapath>,
     connections: Arc<RwLock<HashMap<u64, libccp::Connection<'static, Connection>>>>,
+    socket_operator: SharedSocketOperator,
 }
 
 impl Manager {
     pub fn new() -> Result<Self> {
-        let so = SocketOperator::new()?;
+        let shared_socket_operator =
+            SharedSocketOperator(Arc::new(RwLock::new(SocketOperator::new()?)));
         let dp = libccp::DatapathBuilder::default()
-            .with_ops(so)
+            .with_ops(shared_socket_operator.clone())
             .with_id(0)
             .init()?;
 
@@ -87,12 +121,16 @@ impl Manager {
         let dp_static_ref: &'static libccp::Datapath = Box::leak(dp_box);
 
         Ok(Self {
-            datapath: Arc::new(RwLock::new(dp_static_ref)),
+            datapath: Arc::new(dp_static_ref),
             connections: Arc::new(RwLock::new(HashMap::new())),
+            socket_operator: shared_socket_operator,
         })
     }
 
     pub fn start(&mut self, skeleton: &Skeleton) -> Result<()> {
+        // Start receiving messages from the socket
+        self.receive_messages();
+
         // Poll for signals
         self.poll_signals(skeleton)?;
 
@@ -103,6 +141,18 @@ impl Manager {
         self.free_conn_events(skeleton)?;
 
         Ok(())
+    }
+
+    fn receive_messages(&mut self) {
+        let socket_operator = self.socket_operator.clone();
+        let dp = self.datapath.clone();
+        thread::spawn(move || {
+            let mut buf = [0; 1024];
+            loop {
+                let size = socket_operator.read().unwrap().recv(&mut buf).unwrap();
+                dp.recv_msg(&mut buf[..size]).unwrap();
+            }
+        });
     }
 
     fn poll_signals(&mut self, skeleton: &Skeleton) -> Result<()> {
@@ -132,7 +182,6 @@ impl Manager {
         skeleton.poll_create_conn_events(move |event| {
             // A new flow has been created: create a new connection and store it
             println!("Received create connection event");
-            let dp = dp.read().unwrap();
 
             // Create a new connection
             let conn = Connection::new(event.sock_addr, tx.clone());
