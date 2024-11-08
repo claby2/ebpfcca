@@ -3,9 +3,9 @@ use libccp::{self, CongestionOps, DatapathOps};
 use std::{
     collections::HashMap,
     fs,
-    ops::Deref,
     os::unix::net::UnixDatagram,
     path::Path,
+    rc::Rc,
     sync::{mpsc::Sender, Arc, RwLock},
     thread,
 };
@@ -18,7 +18,7 @@ const EBPFCCP_SOCKET: &str = "/tmp/ccp/ebpfccp";
 /// Socket interface to communicate with CCP congestion control algorithm
 #[derive(Debug)]
 struct SocketOperator {
-    socket: UnixDatagram,
+    socket: Arc<UnixDatagram>,
 }
 
 impl SocketOperator {
@@ -29,12 +29,9 @@ impl SocketOperator {
         }
 
         let socket = UnixDatagram::bind(EBPFCCP_SOCKET)?;
-        Ok(Self { socket })
-    }
-
-    fn send(&mut self, msg: &[u8]) -> Result<usize> {
-        let size = self.socket.send_to(msg, PORTUS_SOCKET)?;
-        Ok(size)
+        Ok(Self {
+            socket: Arc::new(socket),
+        })
     }
 
     fn recv(&self, buf: &mut [u8]) -> Result<usize> {
@@ -43,30 +40,19 @@ impl SocketOperator {
     }
 }
 
-#[derive(Debug)]
-struct SharedSocketOperator(Arc<RwLock<SocketOperator>>);
-
-impl Clone for SharedSocketOperator {
-    fn clone(&self) -> Self {
-        Self(self.0.clone())
-    }
-}
-
-impl DatapathOps for SharedSocketOperator {
+impl DatapathOps for SocketOperator {
     fn send_msg(&mut self, msg: &[u8]) {
-        self.0
-            .write()
-            .unwrap()
-            .send(msg)
+        self.socket
+            .send_to(msg, PORTUS_SOCKET)
             .expect("Failed to send message");
     }
 }
 
-impl Deref for SharedSocketOperator {
-    type Target = Arc<RwLock<SocketOperator>>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
+impl Clone for SocketOperator {
+    fn clone(&self) -> Self {
+        Self {
+            socket: self.socket.clone(),
+        }
     }
 }
 
@@ -102,17 +88,16 @@ impl CongestionOps for Connection {
 
 /// Manager for handling connections and datapath operations
 pub struct Manager {
-    datapath: Arc<&'static libccp::Datapath>,
-    connections: Arc<RwLock<HashMap<u64, libccp::Connection<'static, Connection>>>>,
-    socket_operator: SharedSocketOperator,
+    datapath: &'static libccp::Datapath,
+    connections: Rc<RwLock<HashMap<u64, libccp::Connection<'static, Connection>>>>,
+    socket_operator: SocketOperator,
 }
 
 impl Manager {
     pub fn new() -> Result<Self> {
-        let shared_socket_operator =
-            SharedSocketOperator(Arc::new(RwLock::new(SocketOperator::new()?)));
+        let socket_operator = SocketOperator::new()?;
         let dp = libccp::DatapathBuilder::default()
-            .with_ops(shared_socket_operator.clone())
+            .with_ops(socket_operator.clone())
             .with_id(0)
             .init()?;
 
@@ -121,10 +106,19 @@ impl Manager {
         let dp_static_ref: &'static libccp::Datapath = Box::leak(dp_box);
 
         Ok(Self {
-            datapath: Arc::new(dp_static_ref),
-            connections: Arc::new(RwLock::new(HashMap::new())),
-            socket_operator: shared_socket_operator,
+            datapath: dp_static_ref,
+            connections: Rc::new(RwLock::new(HashMap::new())),
+            socket_operator,
         })
+    }
+
+    pub fn list_connections(&self) {
+        let connections = self.connections.read().unwrap();
+        for (sock_addr, conn) in connections.iter() {
+            println!("Connection: {:?}", sock_addr);
+            let primitives = conn.primitives(self.datapath);
+            println!("Bytes acked: {:?}", primitives.0.bytes_acked);
+        }
     }
 
     pub fn start(&mut self, skeleton: &Skeleton) -> Result<()> {
@@ -145,11 +139,11 @@ impl Manager {
 
     fn receive_messages(&mut self) {
         let socket_operator = self.socket_operator.clone();
-        let dp = self.datapath.clone();
+        let dp = self.datapath;
         thread::spawn(move || {
             let mut buf = [0; 1024];
             loop {
-                let size = socket_operator.read().unwrap().recv(&mut buf).unwrap();
+                let size = socket_operator.recv(&mut buf).unwrap();
                 dp.recv_msg(&mut buf[..size]).unwrap();
             }
         });
@@ -159,8 +153,6 @@ impl Manager {
         let connections = self.connections.clone();
         skeleton.poll_signals(move |signal| {
             // A connection has received a signal: update the connection's primitives
-            println!("Received signal");
-            signal.sock_addr;
             let mut connections = connections.write().unwrap();
 
             if let Some(conn) = connections.get_mut(&signal.sock_addr) {
@@ -176,7 +168,7 @@ impl Manager {
     }
 
     fn create_conn_events(&mut self, skeleton: &Skeleton) -> Result<()> {
-        let dp = self.datapath.clone();
+        let dp = self.datapath;
         let connections = self.connections.clone();
         let tx = skeleton.sender();
         skeleton.poll_create_conn_events(move |event| {
@@ -189,7 +181,7 @@ impl Manager {
                 .with_init_cwnd(event.init_cwnd)
                 .with_mss(event.mss)
                 .with_four_tuple(event.src_ip, event.src_port, event.dst_ip, event.dst_port);
-            let libccp_connection = libccp::Connection::start(&dp, conn, flow_info).unwrap();
+            let libccp_connection = libccp::Connection::start(dp, conn, flow_info).unwrap();
 
             // Store the connection
             let mut connections = connections.write().unwrap();

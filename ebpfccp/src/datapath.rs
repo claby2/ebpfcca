@@ -6,11 +6,7 @@ use libbpf_rs::{
 use plain::Plain;
 use std::{
     mem::MaybeUninit,
-    ops::Deref,
-    sync::{
-        mpsc::{self, Receiver, Sender},
-        Arc,
-    },
+    sync::mpsc::{self, Receiver, Sender},
     thread,
     time::Duration,
 };
@@ -28,32 +24,11 @@ unsafe impl Plain for internal::types::connection {}
 unsafe impl Plain for internal::types::create_conn_event {}
 unsafe impl Plain for internal::types::free_conn_event {}
 
-pub struct Signal(internal::types::signal);
-impl Deref for Signal {
-    type Target = internal::types::signal;
+pub type Signal = internal::types::signal;
 
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
+pub type CreateConnEvent = internal::types::create_conn_event;
 
-pub struct CreateConnEvent(internal::types::create_conn_event);
-impl Deref for CreateConnEvent {
-    type Target = internal::types::create_conn_event;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-pub struct FreeConnEvent(internal::types::free_conn_event);
-impl Deref for FreeConnEvent {
-    type Target = internal::types::free_conn_event;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
+pub type FreeConnEvent = internal::types::free_conn_event;
 
 #[derive(Debug)]
 pub enum ConnectionMessage {
@@ -63,7 +38,7 @@ pub enum ConnectionMessage {
 
 /// Convenience wrapper around the generated skeleton.
 pub struct Skeleton {
-    skel: Arc<&'static internal::DatapathSkel<'static>>,
+    skel: &'static internal::DatapathSkel<'static>,
     tx: Sender<ConnectionMessage>,
     rx: Option<Receiver<ConnectionMessage>>,
 
@@ -122,7 +97,7 @@ impl Skeleton {
         let (tx, rx) = mpsc::channel();
 
         Ok(Skeleton {
-            skel: Arc::new(skel_static_ref),
+            skel: skel_static_ref,
             tx,
             rx: Some(rx),
             _link: link,
@@ -134,11 +109,10 @@ impl Skeleton {
     }
 
     pub fn poll_signals(&self, callback: impl Fn(&Signal) + 'static) -> Result<()> {
-        let skel = self.skel.clone();
-        let _ = poll(&skel.maps.signals, move |data| {
-            let mut signal = internal::types::signal::default();
+        poll(&self.skel.maps.signals, move |data| {
+            let mut signal = Signal::default();
             plain::copy_from_bytes(&mut signal, data).unwrap();
-            callback(&Signal(signal));
+            callback(&signal);
             0
         })?;
         Ok(())
@@ -148,22 +122,20 @@ impl Skeleton {
         &self,
         callback: impl Fn(&CreateConnEvent) + 'static,
     ) -> Result<()> {
-        let skel = self.skel.clone();
-        let _ = poll(&skel.maps.create_conn_events, move |data| {
-            let mut event = internal::types::create_conn_event::default();
+        poll(&self.skel.maps.create_conn_events, move |data| {
+            let mut event = CreateConnEvent::default();
             plain::copy_from_bytes(&mut event, data).unwrap();
-            callback(&CreateConnEvent(event));
+            callback(&event);
             0
         })?;
         Ok(())
     }
 
     pub fn poll_free_conn_events(&self, callback: impl Fn(&FreeConnEvent) + 'static) -> Result<()> {
-        let skel = self.skel.clone();
-        let _ = poll(&skel.maps.free_conn_events, move |data| {
-            let mut event = internal::types::free_conn_event::default();
+        poll(&self.skel.maps.free_conn_events, move |data| {
+            let mut event = FreeConnEvent::default();
             plain::copy_from_bytes(&mut event, data).unwrap();
-            callback(&FreeConnEvent(event));
+            callback(&event);
             0
         })?;
         Ok(())
@@ -171,7 +143,7 @@ impl Skeleton {
 
     pub fn handle_conn_messages(&mut self) -> Result<()> {
         let rx = self.rx.take().expect("Receiver already taken");
-        let skel = self.skel.clone();
+        let skel = self.skel;
         thread::spawn(move || loop {
             match rx.recv() {
                 Ok(ConnectionMessage::SetCwnd(sock_addr, cwnd)) => {
