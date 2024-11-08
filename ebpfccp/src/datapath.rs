@@ -20,11 +20,24 @@ unsafe impl Plain for internal::types::create_conn_event {}
 unsafe impl Plain for internal::types::free_conn_event {}
 
 pub struct Signal(internal::types::signal);
+impl Deref for Signal {
+    type Target = internal::types::signal;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
 
 pub struct Connection(internal::types::connection);
+impl Deref for Connection {
+    type Target = internal::types::connection;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
 
 pub struct CreateConnEvent(internal::types::create_conn_event);
-
 impl Deref for CreateConnEvent {
     type Target = internal::types::create_conn_event;
 
@@ -34,6 +47,13 @@ impl Deref for CreateConnEvent {
 }
 
 pub struct FreeConnEvent(internal::types::free_conn_event);
+impl Deref for FreeConnEvent {
+    type Target = internal::types::free_conn_event;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
 
 /// Convenience wrapper around the generated skeleton.
 pub struct Skeleton<'a>(internal::DatapathSkel<'a>);
@@ -55,7 +75,7 @@ fn poll(map: &dyn MapCore, callback: impl Fn(&[u8]) -> i32 + 'static) -> Result<
 
 impl<'a> Skeleton<'a> {
     pub fn load(open_object: &'a mut MaybeUninit<OpenObject>) -> Result<Self> {
-        let mut skel_builder = internal::DatapathSkelBuilder::default();
+        let skel_builder = internal::DatapathSkelBuilder::default();
 
         //skel_builder.obj_builder.debug(true); // Enable debug mode
 

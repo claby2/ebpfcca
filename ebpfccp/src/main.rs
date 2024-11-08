@@ -4,16 +4,12 @@ mod manager;
 use crate::manager::Manager;
 use anyhow::Result;
 use datapath::Skeleton;
-use libbpf_rs::{
-    skel::{OpenSkel, SkelBuilder},
-    MapCore, MapFlags,
-};
 use rustyline::{error::ReadlineError, DefaultEditor};
 use std::mem::MaybeUninit;
 
 fn main() -> Result<()> {
     let mut open_object = MaybeUninit::uninit();
-    let mut skel = Skeleton::load(&mut open_object)?;
+    let skel = Skeleton::load(&mut open_object)?;
 
     let mut manager = Manager::new()?;
 

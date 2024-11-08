@@ -1,5 +1,4 @@
 use anyhow::Result;
-use libbpf_rs::{MapCore, MapFlags, RingBufferBuilder};
 use libccp::{self, CongestionOps, DatapathOps};
 use std::{
     collections::HashMap,
@@ -7,7 +6,6 @@ use std::{
     os::unix::net::UnixDatagram,
     path::Path,
     sync::{Arc, RwLock},
-    time::Duration,
 };
 
 use crate::datapath::Skeleton;
@@ -44,17 +42,20 @@ impl DatapathOps for SocketOperator {
 pub struct Connection {}
 
 impl CongestionOps for Connection {
-    fn set_cwnd(&mut self, cwnd: u32) {
+    fn set_cwnd(&mut self, _cwnd: u32) {
         todo!("Set congestion window");
     }
 
-    fn set_rate_abs(&mut self, rate: u32) {
+    fn set_rate_abs(&mut self, _rate: u32) {
         todo!("Set rate");
     }
 }
 
 pub struct Manager {
-    datapath: Arc<RwLock<libccp::Datapath>>,
+    datapath: Arc<RwLock<&'static libccp::Datapath>>,
+
+    // Map from socket address to connection
+    connections: Arc<RwLock<HashMap<u64, libccp::Connection<'static, Connection>>>>,
 }
 
 impl Manager {
@@ -64,31 +65,44 @@ impl Manager {
             .with_ops(so)
             .with_id(0)
             .init()?;
+
+        // Leak the datapath reference to make it static
+        let dp_box = Box::new(dp);
+        let dp_static_ref: &'static libccp::Datapath = Box::leak(dp_box);
+
         Ok(Self {
-            datapath: Arc::new(RwLock::new(dp)),
+            datapath: Arc::new(RwLock::new(dp_static_ref)),
+            connections: Arc::new(RwLock::new(HashMap::new())),
         })
     }
 
     pub fn start(&mut self, skeleton: &Skeleton) -> Result<()> {
-        skeleton.poll_signals(move |signal| {
+        skeleton.poll_signals(move |_signal| {
             println!("Received signal");
         })?;
 
         {
             let dp = self.datapath.clone();
+            let connections = self.connections.clone();
             skeleton.poll_create_conn_events(move |event| {
                 println!("Received create connection event");
                 let dp = dp.read().unwrap();
+
+                // Create a new connection
                 let conn = Connection {};
                 let flow_info = libccp::FlowInfo::default()
                     .with_init_cwnd(event.init_cwnd)
                     .with_mss(event.mss)
                     .with_four_tuple(event.src_ip, event.src_port, event.dst_ip, event.dst_port);
-                libccp::Connection::start(&dp, conn, flow_info).unwrap();
+                let libccp_connection = libccp::Connection::start(&dp, conn, flow_info).unwrap();
+
+                // Store the connection
+                let mut connections = connections.write().unwrap();
+                connections.insert(event.sock_addr, libccp_connection);
             })?;
         };
 
-        skeleton.poll_free_conn_events(move |event| {
+        skeleton.poll_free_conn_events(move |_event| {
             println!("Received free connection event");
         })?;
 
