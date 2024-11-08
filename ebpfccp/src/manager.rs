@@ -5,11 +5,10 @@ use std::{
     fs,
     os::unix::net::UnixDatagram,
     path::Path,
-    sync::mpsc::{self, Receiver, Sender},
-    sync::{Arc, RwLock},
+    sync::{mpsc::Sender, Arc, RwLock},
 };
 
-use crate::datapath::Skeleton;
+use crate::datapath::{ConnectionMessage, Skeleton};
 
 const PORTUS_SOCKET: &str = "/tmp/ccp/portus";
 const EBPFCCP_SOCKET: &str = "/tmp/ccp/ebpfccp";
@@ -38,44 +37,41 @@ impl DatapathOps for SocketOperator {
     }
 }
 
-#[derive(Debug)]
-enum ConnectionMessage {
-    SetCwnd(u32),
-    SetRateAbs(u32),
-}
-
 /// Manage connection-level state and operations
 #[derive(Debug)]
 pub struct Connection {
+    socket_addr: u64,
     sender: Sender<ConnectionMessage>,
 }
 
 impl Connection {
-    fn new(sender: Sender<ConnectionMessage>) -> Self {
-        Self { sender }
+    fn new(socket_addr: u64, sender: Sender<ConnectionMessage>) -> Self {
+        Self {
+            socket_addr,
+            sender,
+        }
     }
 }
 
 impl CongestionOps for Connection {
     fn set_cwnd(&mut self, cwnd: u32) {
-        self.sender.send(ConnectionMessage::SetCwnd(cwnd)).unwrap();
+        self.sender
+            .send(ConnectionMessage::SetCwnd(self.socket_addr, cwnd))
+            .unwrap();
     }
 
     fn set_rate_abs(&mut self, rate: u32) {
         self.sender
-            .send(ConnectionMessage::SetRateAbs(rate))
+            .send(ConnectionMessage::SetRateAbs(self.socket_addr, rate))
             .unwrap();
     }
 }
 
+/// Manager for handling connections and datapath operations
 pub struct Manager {
     datapath: Arc<RwLock<&'static libccp::Datapath>>,
 
-    // Map from socket address to connection
     connections: Arc<RwLock<HashMap<u64, libccp::Connection<'static, Connection>>>>,
-
-    cm_tx: Sender<ConnectionMessage>,
-    cm_rx: Receiver<ConnectionMessage>,
 }
 
 impl Manager {
@@ -90,13 +86,9 @@ impl Manager {
         let dp_box = Box::new(dp);
         let dp_static_ref: &'static libccp::Datapath = Box::leak(dp_box);
 
-        let (tx, rx) = mpsc::channel::<ConnectionMessage>();
-
         Ok(Self {
             datapath: Arc::new(RwLock::new(dp_static_ref)),
             connections: Arc::new(RwLock::new(HashMap::new())),
-            cm_tx: tx,
-            cm_rx: rx,
         })
     }
 
@@ -109,9 +101,6 @@ impl Manager {
 
         // Poll for free connection events
         self.free_conn_events(skeleton)?;
-
-        // Handle connection messages
-        self.handle_connection_messages(skeleton)?;
 
         Ok(())
     }
@@ -139,14 +128,14 @@ impl Manager {
     fn create_conn_events(&mut self, skeleton: &Skeleton) -> Result<()> {
         let dp = self.datapath.clone();
         let connections = self.connections.clone();
-        let tx = self.cm_tx.clone();
+        let tx = skeleton.sender();
         skeleton.poll_create_conn_events(move |event| {
             // A new flow has been created: create a new connection and store it
             println!("Received create connection event");
             let dp = dp.read().unwrap();
 
             // Create a new connection
-            let conn = Connection::new(tx.clone());
+            let conn = Connection::new(event.sock_addr, tx.clone());
             let flow_info = libccp::FlowInfo::default()
                 .with_init_cwnd(event.init_cwnd)
                 .with_mss(event.mss)
@@ -167,10 +156,5 @@ impl Manager {
             let mut connections = connections.write().unwrap();
             connections.remove(&event.sock_addr);
         })
-    }
-
-    fn handle_connection_messages(&mut self, skeleton: &Skeleton) -> Result<()> {
-        todo!("Handle connection messages");
-        Ok(())
     }
 }
