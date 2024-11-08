@@ -5,6 +5,7 @@ use std::{
     fs,
     os::unix::net::UnixDatagram,
     path::Path,
+    sync::mpsc::{self, Receiver, Sender},
     sync::{Arc, RwLock},
 };
 
@@ -37,17 +38,33 @@ impl DatapathOps for SocketOperator {
     }
 }
 
+#[derive(Debug)]
+enum ConnectionMessage {
+    SetCwnd(u32),
+    SetRateAbs(u32),
+}
+
 /// Manage connection-level state and operations
 #[derive(Debug)]
-pub struct Connection {}
+pub struct Connection {
+    sender: Sender<ConnectionMessage>,
+}
+
+impl Connection {
+    fn new(sender: Sender<ConnectionMessage>) -> Self {
+        Self { sender }
+    }
+}
 
 impl CongestionOps for Connection {
-    fn set_cwnd(&mut self, _cwnd: u32) {
-        todo!("Set congestion window");
+    fn set_cwnd(&mut self, cwnd: u32) {
+        self.sender.send(ConnectionMessage::SetCwnd(cwnd)).unwrap();
     }
 
-    fn set_rate_abs(&mut self, _rate: u32) {
-        todo!("Set rate");
+    fn set_rate_abs(&mut self, rate: u32) {
+        self.sender
+            .send(ConnectionMessage::SetRateAbs(rate))
+            .unwrap();
     }
 }
 
@@ -56,6 +73,9 @@ pub struct Manager {
 
     // Map from socket address to connection
     connections: Arc<RwLock<HashMap<u64, libccp::Connection<'static, Connection>>>>,
+
+    cm_tx: Sender<ConnectionMessage>,
+    cm_rx: Receiver<ConnectionMessage>,
 }
 
 impl Manager {
@@ -70,65 +90,87 @@ impl Manager {
         let dp_box = Box::new(dp);
         let dp_static_ref: &'static libccp::Datapath = Box::leak(dp_box);
 
+        let (tx, rx) = mpsc::channel::<ConnectionMessage>();
+
         Ok(Self {
             datapath: Arc::new(RwLock::new(dp_static_ref)),
             connections: Arc::new(RwLock::new(HashMap::new())),
+            cm_tx: tx,
+            cm_rx: rx,
         })
     }
 
     pub fn start(&mut self, skeleton: &Skeleton) -> Result<()> {
-        {
-            let connections = self.connections.clone();
-            skeleton.poll_signals(move |signal| {
-                // A connection has received a signal: update the connection's primitives
-                println!("Received signal");
-                signal.sock_addr;
-                let mut connections = connections.write().unwrap();
+        // Poll for signals
+        self.poll_signals(skeleton)?;
 
-                if let Some(conn) = connections.get_mut(&signal.sock_addr) {
-                    let primitives = libccp::Primitives::default()
-                        .with_bytes_acked(signal.bytes_acked)
-                        .with_packets_acked(signal.packets_acked)
-                        .with_packets_misordered(signal.packets_misordered);
-                    // TODO: Add more fields to primitives
+        // Poll for create connection events
+        self.create_conn_events(skeleton)?;
 
-                    conn.load_primitives(primitives);
-                }
-            })?;
-        };
+        // Poll for free connection events
+        self.free_conn_events(skeleton)?;
 
-        {
-            let dp = self.datapath.clone();
-            let connections = self.connections.clone();
-            skeleton.poll_create_conn_events(move |event| {
-                // A new flow has been created: create a new connection and store it
-                println!("Received create connection event");
-                let dp = dp.read().unwrap();
+        // Handle connection messages
+        self.handle_connection_messages(skeleton)?;
 
-                // Create a new connection
-                let conn = Connection {};
-                let flow_info = libccp::FlowInfo::default()
-                    .with_init_cwnd(event.init_cwnd)
-                    .with_mss(event.mss)
-                    .with_four_tuple(event.src_ip, event.src_port, event.dst_ip, event.dst_port);
-                let libccp_connection = libccp::Connection::start(&dp, conn, flow_info).unwrap();
+        Ok(())
+    }
 
-                // Store the connection
-                let mut connections = connections.write().unwrap();
-                connections.insert(event.sock_addr, libccp_connection);
-            })?;
-        };
+    fn poll_signals(&mut self, skeleton: &Skeleton) -> Result<()> {
+        let connections = self.connections.clone();
+        skeleton.poll_signals(move |signal| {
+            // A connection has received a signal: update the connection's primitives
+            println!("Received signal");
+            signal.sock_addr;
+            let mut connections = connections.write().unwrap();
 
-        {
-            let connections = self.connections.clone();
-            skeleton.poll_free_conn_events(move |event| {
-                println!("Received free connection event");
-                // Remove the connection
-                let mut connections = connections.write().unwrap();
-                connections.remove(&event.sock_addr);
-            })?;
-        };
+            if let Some(conn) = connections.get_mut(&signal.sock_addr) {
+                let primitives = libccp::Primitives::default()
+                    .with_bytes_acked(signal.bytes_acked)
+                    .with_packets_acked(signal.packets_acked)
+                    .with_packets_misordered(signal.packets_misordered);
+                // TODO: Add more fields to primitives
 
+                conn.load_primitives(primitives);
+            }
+        })
+    }
+
+    fn create_conn_events(&mut self, skeleton: &Skeleton) -> Result<()> {
+        let dp = self.datapath.clone();
+        let connections = self.connections.clone();
+        let tx = self.cm_tx.clone();
+        skeleton.poll_create_conn_events(move |event| {
+            // A new flow has been created: create a new connection and store it
+            println!("Received create connection event");
+            let dp = dp.read().unwrap();
+
+            // Create a new connection
+            let conn = Connection::new(tx.clone());
+            let flow_info = libccp::FlowInfo::default()
+                .with_init_cwnd(event.init_cwnd)
+                .with_mss(event.mss)
+                .with_four_tuple(event.src_ip, event.src_port, event.dst_ip, event.dst_port);
+            let libccp_connection = libccp::Connection::start(&dp, conn, flow_info).unwrap();
+
+            // Store the connection
+            let mut connections = connections.write().unwrap();
+            connections.insert(event.sock_addr, libccp_connection);
+        })
+    }
+
+    fn free_conn_events(&mut self, skeleton: &Skeleton) -> Result<()> {
+        let connections = self.connections.clone();
+        skeleton.poll_free_conn_events(move |event| {
+            // A connection has been freed: remove it from the map
+            println!("Received free connection event");
+            let mut connections = connections.write().unwrap();
+            connections.remove(&event.sock_addr);
+        })
+    }
+
+    fn handle_connection_messages(&mut self, skeleton: &Skeleton) -> Result<()> {
+        todo!("Handle connection messages");
         Ok(())
     }
 }
