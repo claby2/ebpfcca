@@ -9,7 +9,7 @@ use std::{
     ops::Deref,
     sync::{
         mpsc::{self, Receiver, Sender},
-        Arc, RwLock,
+        Arc,
     },
     thread,
     time::Duration,
@@ -63,7 +63,7 @@ pub enum ConnectionMessage {
 
 /// Convenience wrapper around the generated skeleton.
 pub struct Skeleton {
-    skel: Arc<RwLock<&'static internal::DatapathSkel<'static>>>,
+    skel: Arc<&'static internal::DatapathSkel<'static>>,
     tx: Sender<ConnectionMessage>,
     rx: Option<Receiver<ConnectionMessage>>,
 
@@ -122,7 +122,7 @@ impl Skeleton {
         let (tx, rx) = mpsc::channel();
 
         Ok(Skeleton {
-            skel: Arc::new(RwLock::new(skel_static_ref)),
+            skel: Arc::new(skel_static_ref),
             tx,
             rx: Some(rx),
             _link: link,
@@ -135,7 +135,6 @@ impl Skeleton {
 
     pub fn poll_signals(&self, callback: impl Fn(&Signal) + 'static) -> Result<()> {
         let skel = self.skel.clone();
-        let skel = skel.read().unwrap();
         let _ = poll(&skel.maps.signals, move |data| {
             let mut signal = internal::types::signal::default();
             plain::copy_from_bytes(&mut signal, data).unwrap();
@@ -150,7 +149,6 @@ impl Skeleton {
         callback: impl Fn(&CreateConnEvent) + 'static,
     ) -> Result<()> {
         let skel = self.skel.clone();
-        let skel = skel.read().unwrap();
         let _ = poll(&skel.maps.create_conn_events, move |data| {
             let mut event = internal::types::create_conn_event::default();
             plain::copy_from_bytes(&mut event, data).unwrap();
@@ -162,7 +160,6 @@ impl Skeleton {
 
     pub fn poll_free_conn_events(&self, callback: impl Fn(&FreeConnEvent) + 'static) -> Result<()> {
         let skel = self.skel.clone();
-        let skel = skel.read().unwrap();
         let _ = poll(&skel.maps.free_conn_events, move |data| {
             let mut event = internal::types::free_conn_event::default();
             plain::copy_from_bytes(&mut event, data).unwrap();
@@ -181,7 +178,6 @@ impl Skeleton {
                     let conn = internal::types::connection { cwnd };
                     let conn_bytes = unsafe { any_as_u8_slice(&conn) };
 
-                    let skel = skel.read().unwrap();
                     skel.maps
                         .connections
                         .update(&sock_addr.to_ne_bytes(), conn_bytes, MapFlags::ANY)
