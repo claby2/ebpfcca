@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.92"
 libbpf-rs = "0.24.6"
+libccp = { git = "https://github.com/claby2/libccp-rust", branch = "fixed" }
 plain = "0.2.3"
 rustyline = "14.0.0"
 
