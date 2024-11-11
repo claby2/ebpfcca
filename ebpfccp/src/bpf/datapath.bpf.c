@@ -94,7 +94,23 @@ void BPF_PROG(init, struct sock *sk) {
 }
 
 SEC("struct_ops")
-void BPF_PROG(cwnd_event, struct sock *sk, enum tcp_ca_event event) { return; }
+void BPF_PROG(cwnd_event, struct sock *sk, enum tcp_ca_event event) { 
+  switch (event) {
+    case CA_EVENT_TX_START: // first transmission when no packet in flight
+    break;
+    case CA_EVENT_CWND_RESTART: // cwnd restart
+    break;
+    case CA_EVENT_COMPLETE_CWR: // congestion recovery completed
+    break;
+    case CA_EVENT_LOSS: // loss timeout
+    break;
+    case CA_EVENT_ECN_NO_CE: // ECT set, not CE (congestion experienced) marked
+    break;
+    case CA_EVENT_ECN_IS_CE: // Received CE marked IP packet
+    break;
+  }
+  return;
+}
 
 static void load_signal(struct sock *sk, const struct rate_sample *rs) {
   struct tcp_sock *tp = tcp_sk(sk);
@@ -185,7 +201,22 @@ __u32 BPF_PROG(ssthresh, struct sock *sk) {
 }
 
 SEC("struct_ops")
-void BPF_PROG(set_state, struct sock *sk, __u8 new_state) { return; }
+void BPF_PROG(set_state, struct sock *sk, __u8 new_state) {
+  switch (new_state) {
+    case TCP_CA_Open: // normal state of ACK processing
+    break;
+    case TCP_CA_Disorder: // Duplicate ACKs(DUPACKs) or selective ACKs(SACKs) detected
+    break;
+    case TCP_CA_CWR: // Congestion window reduced state
+    break;
+    case TCP_CA_Recovery: // Started retransmission of packets, when all outstanding ACKed back to Open
+    break;
+    case TCP_CA_Loss: // TCP RTO (retransmission timeout) expires
+    // send loss signal to Rust
+    break;
+  }
+  return;
+}
 
 SEC("struct_ops")
 void BPF_PROG(pckts_acked, struct sock *sk, const struct ack_sample *sample) {
