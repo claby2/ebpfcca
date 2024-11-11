@@ -11,6 +11,8 @@ struct connection {
   // in unit of bytes, note that kernel tp->snd_cwnd is in packets - translate
   // by * (1/tp->mss)
   u32 cwnd;
+  // in units of bytes/second, corresponding to a field in linux struct sk
+  u32 pacing_rate;
 } _connection = {0};
 
 struct signal {
