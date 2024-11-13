@@ -66,7 +66,7 @@ void BPF_PROG(init, struct sock *sk) {
   }
 
   // Add the connection to the map
-  struct connection conn = {.cwnd = tp->snd_cwnd * tp->mss_cache};
+  struct connection conn = {.cwnd = tp->snd_cwnd * tp->mss_cache, .pacing_rate = ~0U};
   bpf_map_update_elem(&connections, &sock_addr, &conn, BPF_ANY);
   num_flows++;
 
@@ -94,7 +94,11 @@ void BPF_PROG(init, struct sock *sk) {
 }
 
 SEC("struct_ops")
+<<<<<<< HEAD
 void BPF_PROG(cwnd_event, struct sock *sk, enum tcp_ca_event event) { 
+=======
+void BPF_PROG(cwnd_event, struct sock *sk, enum tcp_ca_event event) {
+>>>>>>> 24b85c0bf1e1f7ba04cb2bdff8c1453ce3931dac
   switch (event) {
     case CA_EVENT_TX_START: // first transmission when no packet in flight
     break;
@@ -176,7 +180,7 @@ static void load_signal(struct sock *sk, const struct rate_sample *rs) {
   bpf_ringbuf_submit(sig, 0);
 }
 
-void set_cwnd(struct sock *sk) {
+void set_cwnd_and_rate(struct sock *sk) {
   struct tcp_sock *tp = tcp_sk(sk);
 
   u64 sock_addr = (u64)sk;
@@ -186,12 +190,13 @@ void set_cwnd(struct sock *sk) {
     return;
   }
   tp->snd_cwnd = conn->cwnd / tp->mss_cache;
+  sk->sk_pacing_rate = conn->pacing_rate;
 }
 
 SEC("struct_ops")
 void BPF_PROG(cong_control, struct sock *sk, const struct rate_sample *rs) {
   load_signal(sk, rs);
-  set_cwnd(sk);
+  set_cwnd_and_rate(sk);
 }
 
 SEC("struct_ops")
