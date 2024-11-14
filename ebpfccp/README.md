@@ -13,6 +13,18 @@ $ sudo apt install clang libbpf-dev bpftool bpfcc-tools libbpfcc libbpfcc-dev li
 > The eBPF program under bpf/ is partially adopted from the CCP Kernel Module Datapath
 https://github.com/ccp-project/ccp-kernel Commit 264554a50a247a512c8d22248b92a84512e4d01c
 
+### Run a Portus CCA
+```sh
+# Make sure /tmp/ccp exists to place the socket
+$ mkdir /tmp/ccp
+
+# Clone the algorithm in a separate directory, here we're using https://github.com/ccp-project/generic-cong-avoid/
+$ git clone https://github.com/ccp-project/generic-cong-avoid.git
+$ cd generic-cong-avoid
+$ cargo build --release --features=bin
+$ sudo ./target/release/cubic
+```
+
 ### Build, register, and set CCA
 
 ```sh

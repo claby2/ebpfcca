@@ -66,7 +66,7 @@ void BPF_PROG(init, struct sock *sk) {
   }
 
   // Add the connection to the map
-  struct connection conn = {.cwnd = tp->snd_cwnd * tp->mss_cache};
+  struct connection conn = {.cwnd = tp->snd_cwnd * tp->mss_cache, .pacing_rate = ~0U};
   bpf_map_update_elem(&connections, &sock_addr, &conn, BPF_ANY);
   num_flows++;
 
@@ -94,7 +94,23 @@ void BPF_PROG(init, struct sock *sk) {
 }
 
 SEC("struct_ops")
-void BPF_PROG(cwnd_event, struct sock *sk, enum tcp_ca_event event) { return; }
+void BPF_PROG(cwnd_event, struct sock *sk, enum tcp_ca_event event) {
+  switch (event) {
+    case CA_EVENT_TX_START: // first transmission when no packet in flight
+    break;
+    case CA_EVENT_CWND_RESTART: // cwnd restart
+    break;
+    case CA_EVENT_COMPLETE_CWR: // congestion recovery completed
+    break;
+    case CA_EVENT_LOSS: // loss timeout
+    break;
+    case CA_EVENT_ECN_NO_CE: // ECT set, not CE (congestion experienced) marked
+    break;
+    case CA_EVENT_ECN_IS_CE: // Received CE marked IP packet
+    break;
+  }
+  return;
+}
 
 static void load_signal(struct sock *sk, const struct rate_sample *rs) {
   struct tcp_sock *tp = tcp_sk(sk);
@@ -160,7 +176,7 @@ static void load_signal(struct sock *sk, const struct rate_sample *rs) {
   bpf_ringbuf_submit(sig, 0);
 }
 
-void set_cwnd(struct sock *sk) {
+void set_cwnd_and_rate(struct sock *sk) {
   struct tcp_sock *tp = tcp_sk(sk);
 
   u64 sock_addr = (u64)sk;
@@ -170,12 +186,13 @@ void set_cwnd(struct sock *sk) {
     return;
   }
   tp->snd_cwnd = conn->cwnd / tp->mss_cache;
+  sk->sk_pacing_rate = conn->pacing_rate;
 }
 
 SEC("struct_ops")
 void BPF_PROG(cong_control, struct sock *sk, const struct rate_sample *rs) {
   load_signal(sk, rs);
-  set_cwnd(sk);
+  set_cwnd_and_rate(sk);
 }
 
 SEC("struct_ops")
@@ -185,7 +202,22 @@ __u32 BPF_PROG(ssthresh, struct sock *sk) {
 }
 
 SEC("struct_ops")
-void BPF_PROG(set_state, struct sock *sk, __u8 new_state) { return; }
+void BPF_PROG(set_state, struct sock *sk, __u8 new_state) {
+  switch (new_state) {
+    case TCP_CA_Open: // normal state of ACK processing
+    break;
+    case TCP_CA_Disorder: // Duplicate ACKs(DUPACKs) or selective ACKs(SACKs) detected
+    break;
+    case TCP_CA_CWR: // Congestion window reduced state
+    break;
+    case TCP_CA_Recovery: // Started retransmission of packets, when all outstanding ACKed back to Open
+    break;
+    case TCP_CA_Loss: // TCP RTO (retransmission timeout) expires
+    // send loss signal to Rust
+    break;
+  }
+  return;
+}
 
 SEC("struct_ops")
 void BPF_PROG(pckts_acked, struct sock *sk, const struct ack_sample *sample) {
