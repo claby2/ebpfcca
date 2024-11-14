@@ -32,7 +32,7 @@ pub type FreeConnEvent = internal::types::free_conn_event;
 
 #[derive(Debug)]
 pub enum ConnectionMessage {
-    SetCwnd(u64, u32), // SocketAddr, packets in send_cwnd
+    SetCwnd(u64, u32),    // SocketAddr, packets in send_cwnd
     SetRateAbs(u64, u32), // SocketAddr, bytes/second for sk_pacing_rate
 }
 
@@ -148,34 +148,38 @@ impl Skeleton {
             match rx.recv() {
                 Ok(ConnectionMessage::SetCwnd(sock_addr, cwnd)) => {
                     let socket_addr = sock_addr.to_ne_bytes();
-                    let conn_opt = skel.maps.connections
+                    let conn_opt = skel
+                        .maps
+                        .connections
                         .lookup(&socket_addr, MapFlags::ANY)
                         .unwrap();
                     if let Some(conn_bytes) = conn_opt {
-                            let mut conn = internal::types::connection::default();
-                            plain::copy_from_bytes(&mut conn, &conn_bytes[..]).unwrap();
-                            conn.cwnd = cwnd;
-                            let conn_bytes = unsafe { any_as_u8_slice(&conn) };
-                            skel.maps
-                                .connections
-                                .update(&socket_addr, conn_bytes, MapFlags::ANY)
-                                .unwrap();
+                        let mut conn = internal::types::connection::default();
+                        plain::copy_from_bytes(&mut conn, &conn_bytes[..]).unwrap();
+                        conn.cwnd = cwnd;
+                        let conn_bytes = unsafe { any_as_u8_slice(&conn) };
+                        skel.maps
+                            .connections
+                            .update(&socket_addr, conn_bytes, MapFlags::ANY)
+                            .unwrap();
                     }
                 }
                 Ok(ConnectionMessage::SetRateAbs(sock_addr, rate)) => {
                     let socket_addr = sock_addr.to_ne_bytes();
-                    let conn_opt = skel.maps.connections
+                    let conn_opt = skel
+                        .maps
+                        .connections
                         .lookup(&socket_addr, MapFlags::ANY)
                         .unwrap();
                     if let Some(conn_bytes) = conn_opt {
-                            let mut conn = internal::types::connection::default();
-                            plain::copy_from_bytes(&mut conn, &conn_bytes[..]).unwrap();
-                            conn.pacing_rate = rate;
-                            let conn_bytes = unsafe { any_as_u8_slice(&conn) };
-                            skel.maps
-                                .connections
-                                .update(&socket_addr, conn_bytes, MapFlags::ANY)
-                                .unwrap();
+                        let mut conn = internal::types::connection::default();
+                        plain::copy_from_bytes(&mut conn, &conn_bytes[..]).unwrap();
+                        conn.pacing_rate = rate;
+                        let conn_bytes = unsafe { any_as_u8_slice(&conn) };
+                        skel.maps
+                            .connections
+                            .update(&socket_addr, conn_bytes, MapFlags::ANY)
+                            .unwrap();
                     }
                 }
                 Err(e) => {
