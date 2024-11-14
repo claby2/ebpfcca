@@ -64,6 +64,24 @@ fn poll(map: &dyn MapCore, callback: impl Fn(&[u8]) -> i32 + 'static) -> Result<
     Ok(())
 }
 
+fn update_connection(
+    skel: &internal::DatapathSkel,
+    sock_addr: u64,
+    update_fn: impl Fn(&mut internal::types::connection),
+) -> Result<()> {
+    let socket_addr = sock_addr.to_ne_bytes();
+    if let Some(conn_bytes) = skel.maps.connections.lookup(&socket_addr, MapFlags::ANY)? {
+        let mut conn = internal::types::connection::default();
+        plain::copy_from_bytes(&mut conn, &conn_bytes[..]).unwrap();
+        update_fn(&mut conn);
+        let conn_bytes = unsafe { any_as_u8_slice(&conn) };
+        skel.maps
+            .connections
+            .update(&socket_addr, conn_bytes, MapFlags::ANY)?;
+    }
+    Ok(())
+}
+
 // copied from https://stackoverflow.com/a/42186553
 unsafe fn any_as_u8_slice<T: Sized>(p: &T) -> &[u8] {
     ::core::slice::from_raw_parts((p as *const T) as *const u8, ::core::mem::size_of::<T>())
@@ -147,39 +165,19 @@ impl Skeleton {
         thread::spawn(move || loop {
             match rx.recv() {
                 Ok(ConnectionMessage::SetCwnd(sock_addr, cwnd)) => {
-                    let socket_addr = sock_addr.to_ne_bytes();
-                    let conn_opt = skel
-                        .maps
-                        .connections
-                        .lookup(&socket_addr, MapFlags::ANY)
-                        .unwrap();
-                    if let Some(conn_bytes) = conn_opt {
-                        let mut conn = internal::types::connection::default();
-                        plain::copy_from_bytes(&mut conn, &conn_bytes[..]).unwrap();
+                    println!("Setting cwnd for {:?} to {}", sock_addr, cwnd);
+                    if let Err(e) = update_connection(skel, sock_addr, |conn| {
                         conn.cwnd = cwnd;
-                        let conn_bytes = unsafe { any_as_u8_slice(&conn) };
-                        skel.maps
-                            .connections
-                            .update(&socket_addr, conn_bytes, MapFlags::ANY)
-                            .unwrap();
+                    }) {
+                        eprintln!("Error updating cwnd: {:?}", e);
                     }
                 }
                 Ok(ConnectionMessage::SetRateAbs(sock_addr, rate)) => {
-                    let socket_addr = sock_addr.to_ne_bytes();
-                    let conn_opt = skel
-                        .maps
-                        .connections
-                        .lookup(&socket_addr, MapFlags::ANY)
-                        .unwrap();
-                    if let Some(conn_bytes) = conn_opt {
-                        let mut conn = internal::types::connection::default();
-                        plain::copy_from_bytes(&mut conn, &conn_bytes[..]).unwrap();
+                    println!("Setting pacing rate for {:?} to {}", sock_addr, rate);
+                    if let Err(e) = update_connection(skel, sock_addr, |conn| {
                         conn.pacing_rate = rate;
-                        let conn_bytes = unsafe { any_as_u8_slice(&conn) };
-                        skel.maps
-                            .connections
-                            .update(&socket_addr, conn_bytes, MapFlags::ANY)
-                            .unwrap();
+                    }) {
+                        eprintln!("Error updating pacing rate: {:?}", e);
                     }
                 }
                 Err(e) => {
