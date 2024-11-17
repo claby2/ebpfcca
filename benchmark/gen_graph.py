@@ -50,44 +50,56 @@ def get_xy_array(intervals: list[dict], y_unit: str, use_sum: bool) -> tuple[NDA
     
     return (x_arr, y_arr)
 
-notice = input("This script will delete all .json files in the current directory. Do you want to continue? (y/n) ")
-if notice != "y" and notice != "Y":
-    print("Aborting")
-    exit()
+mode = input('''Choose mode:
+1. Delete all .json files in the current directory and rerun benchmark
+2. Process existing .json files and generate graph
+>>''')
 
-print("Running the benchmark for the following CCAs: ", ccas)
-print(f"Parameters: target_server={target_server}, target_port={target_port}, total_seconds={total_seconds}, report_interval={report_interval}, trials={trials}")
-print(f"Data processing options: y_unit={y_unit}, use_sum={use_sum}")
+if mode == "1":
+    # Delete all .json files in the current directory
+    for file in os.listdir(os.getcwd()):
+        if file.endswith(".json"):
+            os.remove(file)
+    print("Deleted all .json files in the current directory")
 
-results = []
+    # run benchmark
+    print("Running the benchmark for the following CCAs: ", ccas)
+    print(f"Parameters: target_server={target_server}, target_port={target_port}, total_seconds={total_seconds}, report_interval={report_interval}, trials={trials}")
+    for cca in ccas:
+        os.system(f"sudo bash benchmark.sh {target_server} {target_port} {total_seconds} {report_interval} {cca} {trials}")
+else:
+    print(f"Data processing options: y_unit={y_unit}, use_sum={use_sum}")
+    results = []
 
-for cca in ccas:
-    # generate data
-    os.system(f"sudo bash benchmark.sh {target_server} {target_port} {total_seconds} {report_interval} {cca} {trials}")
+    for cca in ccas:
+        # process each json file
+        cca_xs = []
+        cca_ys = []
+        for trial in range(1, trials+1):
+            file = os.path.join(os.getcwd(), f"{cca}_{trial}.json")
+            try:
+                with open(file, "r") as f:
+                    data = json.load(f)
+                    intervals = data["intervals"]
+                    (xs, ys) = get_xy_array(intervals, y_unit, use_sum)
+                    cca_xs.append(xs)
+                    cca_ys.append(ys)
+            except FileNotFoundError:
+                print(f"File {file} not found")
+                continue
+        cca_xs = np.array(cca_xs)
+        cca_ys = np.array(cca_ys)
+        average_xs = np.mean(cca_xs, axis=1)
+        average_ys = np.mean(cca_ys, axis=1)
+        results.append(Result(average_xs, average_ys, cca))
 
-    # process each json file, then delete all of them
-    cca_xs = np.empty(trials)
-    cca_ys = np.empty(trials)
-    for trial in range(1, trials+1):
-        file = os.getcwd() + f"\\{cca}_{trial}.json"
-        with open(file, "r") as f:
-            data = json.load(f)
-            intervals = data["intervals"]
-            (xs, ys) = get_xy_array(intervals, y_unit, use_sum)
-            cca_xs[trial-1] = xs
-            cca_ys[trial-1] = ys
-        os.remove(file)
-    average_xs = np.mean(cca_xs, axis=1)
-    average_ys = np.mean(cca_ys, axis=1)
-    results.append(Result(average_xs, average_ys, cca))
-
-# Plot the graph
-for result in results:
-    plt.plot(result.x_arr, result.y_arr, label=result.cca)
-plt.xlabel("Time (s)")
-plt.ylabel(y_unit)
-plt.legend(title = "CCA:")
-plt.title(f"CCA Performance, averaged over {trials} trials")
-plt.show()
+    # Plot the graph
+    for result in results:
+        plt.plot(result.x_arr, result.y_arr, label=result.cca)
+    plt.xlabel("Time (s)")
+    plt.ylabel(y_unit)
+    plt.legend(title = "CCA:")
+    plt.title(f"CCA Performance, averaged over {trials} trials")
+    plt.show()
                 
 
