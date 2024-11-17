@@ -15,6 +15,13 @@ struct connection {
   u32 pacing_rate;
 } _connection = {0};
 
+struct ecn {
+  // bytes corresponding to ecn-marked packets
+  u32 ecn_bytes;
+  // ecn-marked packets
+  u32 ecn_packets;
+} _ecn = {0};
+
 struct signal {
   u64 sock_addr;
   // newly acked, in-order bytes
@@ -29,17 +36,15 @@ struct signal {
   // out-of-order packets
   u32 packets_misordered;
 
-  // bytes corresponding to ecn-marked packets
-  u32 ecn_bytes; // TODO: add ECN support
-
-  // ecn-marked packets
-  u32 ecn_packets; // TODO: add ECN support
+  struct ecn ecn;
 
   // an estimate of the number of packets lost
   u32 lost_pkts_sample;
 
-  bool was_timeout; // TODO: I think we need to handle this differently, perhaps
-                    // another event buffer
+  // TODO: This should technically be a boolean, however, FFI seems to translate
+  // bool into MaybeUninit<bool>...
+  // So instead we'll treat was_timeout == 1 as true and false otherwise
+  u8 was_timeout;
 
   // a recent sample of the round-trip time
   u64 rtt_sample_us;
