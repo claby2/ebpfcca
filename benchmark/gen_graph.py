@@ -65,6 +65,8 @@ if mode == "1":
     # run benchmark
     print("Running the benchmark for the following CCAs: ", ccas)
     print(f"Parameters: target_server={target_server}, target_port={target_port}, total_seconds={total_seconds}, report_interval={report_interval}, trials={trials}")
+    default_waittime = 5
+    print(f"Expected run time: {trials * (total_seconds + default_waittime) * len(ccas)}")
     for cca in ccas:
         os.system(f"sudo bash benchmark.sh {target_server} {target_port} {total_seconds} {report_interval} {cca} {trials}")
 else:
