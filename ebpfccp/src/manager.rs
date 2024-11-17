@@ -144,7 +144,9 @@ impl Manager {
             let mut buf = [0; 1024];
             loop {
                 let size = socket_operator.recv(&mut buf).unwrap();
-                dp.recv_msg(&mut buf[..size]).unwrap();
+                if let Err(e) = dp.recv_msg(&mut buf[..size]) {
+                    eprintln!("Failed to receive message: {:?}", e);
+                }
             }
         });
     }
@@ -172,6 +174,9 @@ impl Manager {
                 // TODO: Add more primitives (just a few more I believe)
 
                 conn.load_primitives(primitives);
+                if let Err(e) = conn.invoke() {
+                    eprintln!("Failed to invoke connection: {:?}", e);
+                }
             }
         })
     }
