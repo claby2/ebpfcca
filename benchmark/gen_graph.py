@@ -65,14 +65,15 @@ if mode == "1":
     # run benchmark
     print("Running the benchmark for the following CCAs: ", ccas)
     print(f"Parameters: target_server={target_server}, target_port={target_port}, total_seconds={total_seconds}, report_interval={report_interval}, trials={trials}")
+    default_waittime = 5
+    print(f"Expected run time: {trials * (total_seconds + default_waittime) * len(ccas)}")
     for cca in ccas:
         os.system(f"sudo bash benchmark.sh {target_server} {target_port} {total_seconds} {report_interval} {cca} {trials}")
 else:
     print(f"Data processing options: y_unit={y_unit}, use_sum={use_sum}")
     results = []
-
     for cca in ccas:
-        # process each json file
+        # process each json file for each cca
         cca_xs = []
         cca_ys = []
         for trial in range(1, trials+1):
@@ -87,8 +88,11 @@ else:
             except FileNotFoundError:
                 print(f"File {file} not found")
                 continue
-        cca_xs = np.array(cca_xs)
-        cca_ys = np.array(cca_ys)
+        max_len = len(max(cca_xs, key=len))
+        def pad_length(arr: NDArray) -> NDArray:
+            return np.pad(arr, (0, max_len - len(arr)))
+        cca_xs = np.array(pad_length(cca_xs))
+        cca_ys = np.array(pad_length(cca_ys))
         average_xs = np.mean(cca_xs, axis=1)
         average_ys = np.mean(cca_ys, axis=1)
         results.append(Result(average_xs, average_ys, cca))
