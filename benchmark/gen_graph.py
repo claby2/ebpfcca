@@ -11,7 +11,7 @@ target_server = "bokaibi.com"
 target_port = 5142
 total_seconds = 30
 report_interval = 0.1
-ccas = ["cubic", "bpf_cubic"]
+ccas = ["cubic", "bpf_cubic", "ebpfccp"]
 trials = 10
 y_unit = "bytes"
 use_sum = True
@@ -104,8 +104,8 @@ else:
         max_len = len(max(cca_xs, key=len))
         def pad_length(arr: NDArray) -> NDArray:
             return np.pad(arr, (0, max_len - len(arr)))
-        cca_xs = np.array(pad_length(cca_xs))
-        cca_ys = np.array(pad_length(cca_ys))
+        cca_xs = np.array(list(map(pad_length, cca_xs)))
+        cca_ys = np.array(list(map(pad_length, cca_ys)))
         average_xs = np.mean(cca_xs, axis=1)
         average_ys = np.mean(cca_ys, axis=1)
         results.append(Result(average_xs, average_ys, cca))
@@ -114,12 +114,14 @@ else:
     # Plot the graph
     for result in results:
         plt.plot(result.x_arr, result.y_arr, label=result.cca)
+    plt.autoscale(enable=True, axis="x")
     plt.xlabel("Time (s)")
     plt.ylabel(y_unit)
     plt.legend(title = "CCA:")
     plt.title(f"CCA Performance, averaged over {trials} trials")
     plt.savefig("CCA Network Perf.png")
 
+    plt.clf()
     # Plot performance as bar graph
     plt.bar(perf_results.keys(), perf_results.values())
     plt.xlabel("CCA")
