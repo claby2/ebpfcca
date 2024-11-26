@@ -170,8 +170,12 @@ impl Manager {
                     .with_bytes_in_flight(signal.bytes_in_flight)
                     .with_packets_in_flight(signal.packets_in_flight)
                     .with_snd_cwnd(signal.snd_cwnd)
-                    .with_bytes_pending(signal.bytes_pending);
-                // TODO: Add more primitives (just a few more I believe)
+                    .with_bytes_pending(signal.bytes_pending)
+                    // Timeout
+                    .with_was_timeout(signal.was_timeout == 1)
+                    // ECN
+                    .with_ecn_bytes(signal.ecn.ecn_bytes)
+                    .with_ecn_packets(signal.ecn.ecn_packets);
 
                 conn.load_primitives(primitives);
                 if let Err(e) = conn.invoke() {

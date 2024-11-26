@@ -17,20 +17,34 @@ struct {
 // Ring buffer to send signal events to user-land
 struct {
   __uint(type, BPF_MAP_TYPE_RINGBUF);
-  __uint(max_entries, sizeof(struct signal) * 1024);
+  __uint(max_entries, sizeof(struct signal) * MAX_FLOWS);
 } signals SEC(".maps");
 
 // Used to notify user-space when a new connection is created
 struct {
   __uint(type, BPF_MAP_TYPE_RINGBUF);
-  __uint(max_entries, sizeof(struct create_conn_event) * 1024);
+  __uint(max_entries, sizeof(struct create_conn_event) * MAX_FLOWS);
 } create_conn_events SEC(".maps");
 
 // Used to notify user-space when a connection is freed
 struct {
   __uint(type, BPF_MAP_TYPE_RINGBUF);
-  __uint(max_entries, sizeof(struct free_conn_event) * 1024);
+  __uint(max_entries, sizeof(struct free_conn_event) * MAX_FLOWS);
 } free_conn_events SEC(".maps");
+
+struct {
+  __uint(type, BPF_MAP_TYPE_HASH);
+  __uint(max_entries, MAX_FLOWS);
+  __type(key, u64); // socket addr
+  __type(value, bool);
+} timeouts SEC(".maps");
+
+struct {
+  __uint(type, BPF_MAP_TYPE_HASH);
+  __uint(max_entries, MAX_FLOWS);
+  __type(key, u64); // socket addr
+  __type(value, struct ecn);
+} ecns SEC(".maps");
 
 SEC("struct_ops")
 void BPF_PROG(init, struct sock *sk) {
@@ -66,7 +80,8 @@ void BPF_PROG(init, struct sock *sk) {
   }
 
   // Add the connection to the map
-  struct connection conn = {.cwnd = tp->snd_cwnd * tp->mss_cache, .pacing_rate = ~0U};
+  struct connection conn = {.cwnd = tp->snd_cwnd * tp->mss_cache,
+                            .pacing_rate = ~0U};
   bpf_map_update_elem(&connections, &sock_addr, &conn, BPF_ANY);
   num_flows++;
 
@@ -91,27 +106,31 @@ void BPF_PROG(init, struct sock *sk) {
   evt->dst_port = sk->__sk_common.skc_dport;
 
   bpf_ringbuf_submit(evt, 0);
+
+  if (sk->sk_pacing_status == SK_PACING_NONE)
+    sk->sk_pacing_status = SK_PACING_NEEDED;
 }
 
 SEC("struct_ops")
 void BPF_PROG(cwnd_event, struct sock *sk, enum tcp_ca_event event) {
   switch (event) {
-    case CA_EVENT_TX_START: // first transmission when no packet in flight
+  case CA_EVENT_TX_START: // first transmission when no packet in flight
     break;
-    case CA_EVENT_CWND_RESTART: // cwnd restart
+  case CA_EVENT_CWND_RESTART: // cwnd restart
     break;
-    case CA_EVENT_COMPLETE_CWR: // congestion recovery completed
+  case CA_EVENT_COMPLETE_CWR: // congestion recovery completed
     break;
-    case CA_EVENT_LOSS: // loss timeout
+  case CA_EVENT_LOSS: // loss timeout
     break;
-    case CA_EVENT_ECN_NO_CE: // ECT set, not CE (congestion experienced) marked
+  case CA_EVENT_ECN_NO_CE: // ECT set, not CE (congestion experienced) marked
     break;
-    case CA_EVENT_ECN_IS_CE: // Received CE marked IP packet
+  case CA_EVENT_ECN_IS_CE: // Received CE marked IP packet
     break;
   }
   return;
 }
 
+// Measure and report primitive measurements as a signal
 static void load_signal(struct sock *sk, const struct rate_sample *rs) {
   struct tcp_sock *tp = tcp_sk(sk);
   struct ccp *ca = inet_csk_ca(sk);
@@ -172,6 +191,16 @@ static void load_signal(struct sock *sk, const struct rate_sample *rs) {
     }
   }
 
+  // Consult the timeouts map to see if this connection has timed out
+  bool *was_timeout;
+  was_timeout = bpf_map_lookup_elem(&timeouts, &sock_addr);
+  sig->was_timeout = was_timeout && *was_timeout ? 1 : 0;
+
+  // Consult the ECN map to see if this connection has ECN-marked packets
+  struct ecn *ecn;
+  ecn = bpf_map_lookup_elem(&ecns, &sock_addr);
+  sig->ecn = ecn ? *ecn : (struct ecn){0};
+
   // Submit the reserved space to the ring buffer
   bpf_ringbuf_submit(sig, 0);
 }
@@ -203,24 +232,14 @@ __u32 BPF_PROG(ssthresh, struct sock *sk) {
 
 SEC("struct_ops")
 void BPF_PROG(set_state, struct sock *sk, __u8 new_state) {
-  switch (new_state) {
-    case TCP_CA_Open: // normal state of ACK processing
-    break;
-    case TCP_CA_Disorder: // Duplicate ACKs(DUPACKs) or selective ACKs(SACKs) detected
-    break;
-    case TCP_CA_CWR: // Congestion window reduced state
-    break;
-    case TCP_CA_Recovery: // Started retransmission of packets, when all outstanding ACKed back to Open
-    break;
-    case TCP_CA_Loss: // TCP RTO (retransmission timeout) expires
-    // send loss signal to Rust
-    break;
-  }
-  return;
+  bool timeout = new_state == TCP_CA_Loss;
+  u64 sock_addr = (u64)sk;
+
+  bpf_map_update_elem(&timeouts, &sock_addr, &timeout, BPF_ANY);
 }
 
 SEC("struct_ops")
-void BPF_PROG(pckts_acked, struct sock *sk, const struct ack_sample *sample) {
+void BPF_PROG(pkts_acked, struct sock *sk, const struct ack_sample *sample) {
   return;
 }
 
@@ -248,6 +267,26 @@ void BPF_PROG(release, struct sock *sk) {
   bpf_ringbuf_submit(evt, 0);
 }
 
+SEC("struct_ops")
+void BPF_PROG(in_ack_event, struct sock *sk, u32 flags) {
+  struct tcp_sock *tp = tcp_sk(sk);
+  struct ccp *ca = inet_csk_ca(sk);
+
+  u64 sock = (u64)sk;
+
+  u32 acked_bytes = tp->snd_una - ca->last_snd_una;
+  ca->last_snd_una = tp->snd_una;
+  u32 ecn_bytes = 0;
+  u32 ecn_packets = 0;
+  if (acked_bytes && (flags & CA_ACK_ECE)) {
+    ecn_bytes = acked_bytes;
+    ecn_packets = acked_bytes / tp->mss_cache;
+  }
+
+  struct ecn ecn = {.ecn_bytes = ecn_bytes, .ecn_packets = ecn_packets};
+  bpf_map_update_elem(&ecns, &sk, &ecn, BPF_ANY);
+}
+
 SEC(".struct_ops")
 struct tcp_congestion_ops ebpfccp = {
     .init = (void *)init,
@@ -256,8 +295,9 @@ struct tcp_congestion_ops ebpfccp = {
     .set_state = (void *)set_state,
     .undo_cwnd = (void *)undo_cwnd,
     .cwnd_event = (void *)cwnd_event,
-    .pkts_acked = (void *)pckts_acked,
+    .pkts_acked = (void *)pkts_acked,
     .get_info = NULL,
     .release = (void *)release,
+    .in_ack_event = (void *)in_ack_event,
     .name = "ebpfccp",
 };
