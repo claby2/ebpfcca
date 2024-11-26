@@ -17,6 +17,7 @@ for i in $(seq 1 $TRIALS)
 do
     echo "Trial $i for $CCA Starting..."
     touch "${CCA}_${i}.json"
+    nice -n 19 python3 cpu_bench.py "${CCA}_${i}_cpu_perf" $TOTAL_SECONDS &
     iperf3 -c $TARGET_SERVER -p $TARGET_PORT \
     --json --verbose --timestamps --interval $REPORT_INTERVAL \
     --time $TOTAL_SECONDS --logfile "${CCA}_${i}.json"

@@ -72,10 +72,12 @@ if mode == "1":
 else:
     print(f"Data processing options: y_unit={y_unit}, use_sum={use_sum}")
     results = []
+    perf_results = {}
     for cca in ccas:
         # process each json file for each cca
         cca_xs = []
         cca_ys = []
+        total_cpu_perf = 0
         for trial in range(1, trials+1):
             file = os.path.join(os.getcwd(), f"{cca}_{trial}.json")
             try:
@@ -88,6 +90,17 @@ else:
             except FileNotFoundError:
                 print(f"File {file} not found")
                 continue
+            cpu_perf_file = os.path.join(os.getcwd(), f"{cca}_{trial}_cpu_perf")
+            try:
+                with open(cpu_perf_file, "r") as f:
+                    cpu_perf = int(f.read())
+                    total_cpu_perf += cpu_perf
+            except FileNotFoundError:
+                print(f"File {cpu_perf_file} not found")
+                continue
+            except ValueError:
+                print(f"Invalid value in {cpu_perf_file}")
+                continue
         max_len = len(max(cca_xs, key=len))
         def pad_length(arr: NDArray) -> NDArray:
             return np.pad(arr, (0, max_len - len(arr)))
@@ -96,6 +109,7 @@ else:
         average_xs = np.mean(cca_xs, axis=1)
         average_ys = np.mean(cca_ys, axis=1)
         results.append(Result(average_xs, average_ys, cca))
+        perf_results[cca] = total_cpu_perf / trials
 
     # Plot the graph
     for result in results:
@@ -104,6 +118,13 @@ else:
     plt.ylabel(y_unit)
     plt.legend(title = "CCA:")
     plt.title(f"CCA Performance, averaged over {trials} trials")
-    plt.show()
+    plt.savefig("CCA Network Perf.png")
+
+    # Plot performance as bar graph
+    plt.bar(perf_results.keys(), perf_results.values())
+    plt.xlabel("CCA")
+    plt.ylabel("CPU Performance (average Python additions)")
+    plt.savefig("CCA CPU Perf.png")
+
                 
 
