@@ -1,0 +1,15 @@
+[package]
+name = "ebpfccp"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0.92"
+libbpf-rs = "0.24.6"
+libccp = { git = "https://github.com/akshayknarayan/libccp-rust", branch = "master" }
+plain = "0.2.3"
+rustyline = "14.0.0"
+
+[build-dependencies]
+libbpf-cargo = "0.24.6"
+vmlinux = { version = "0.0", git = "https://github.com/libbpf/vmlinux.h.git", rev = "172793d6a409d98d1cfb843c80df73733e9f832f" }
