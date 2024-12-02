@@ -112,7 +112,7 @@ void BPF_PROG(init, struct sock *sk) {
 }
 
 SEC("struct_ops")
-void BPF_PROG(cwnd_event, struct sock *sk, enum tcp_ca_event event) { 
+void BPF_PROG(cwnd_event, struct sock *sk, enum tcp_ca_event event) {
   switch (event) {
   case CA_EVENT_TX_START: // first transmission when no packet in flight
     break;
