@@ -11,10 +11,10 @@ target_server = "bokaibi.com"
 target_port = 5142
 total_seconds = 30
 report_interval = 0.1
-ccas = ["cubic", "bpf_cubic", "ebpfccp"]
+ccas = ["cubic", "bpf_cubic", "ebpfccp", "ccp"]
 trials = 10
-y_unit = "bytes"
-use_sum = True
+y_unit = "snd_cwnd"
+use_sum = False
                 
 
 class Result:
@@ -58,7 +58,7 @@ mode = input('''Choose mode:
 if mode == "1":
     # Delete all .json files in the current directory
     for file in os.listdir(os.getcwd()):
-        if file.endswith(".json"):
+        if file.endswith(".json") or file.endswith("_cpu_perf"):
             os.remove(file)
     print("Deleted all .json files in the current directory")
 
@@ -102,12 +102,20 @@ else:
                 print(f"Invalid value in {cpu_perf_file}")
                 continue
         max_len = len(max(cca_xs, key=len))
+        print(max_len)
         def pad_length(arr: NDArray) -> NDArray:
-            return np.pad(arr, (0, max_len - len(arr)))
+            after = np.pad(arr, (0, max_len - len(arr)), constant_values=arr[-1])
+            print(f"Before: {arr.shape}, after: {after.shape}")
+            return after
         cca_xs = np.array(list(map(pad_length, cca_xs)))
         cca_ys = np.array(list(map(pad_length, cca_ys)))
-        average_xs = np.mean(cca_xs, axis=1)
-        average_ys = np.mean(cca_ys, axis=1)
+        average_xs = np.mean(cca_xs, axis=0)
+        prev = 0
+        for x in average_xs:
+            if x < prev:
+                print(f"Decrease detected: prev: {prev}, curr: {x}")
+            prev = x
+        average_ys = np.mean(cca_ys, axis=0)
         results.append(Result(average_xs, average_ys, cca))
         perf_results[cca] = total_cpu_perf / trials
 
