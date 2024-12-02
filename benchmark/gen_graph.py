@@ -70,7 +70,7 @@ if mode == "1":
     print(f"Expected run time: {trials * (total_seconds + default_waittime) * len(ccas)}")
     for t in range(trials):
         for cca in ccas:
-            os.system(f"sudo bash benchmark.sh {target_server} {target_port} {total_seconds} {report_interval} {cca} 1")
+            os.system(f"sudo bash benchmark.sh {target_server} {target_port} {total_seconds} {report_interval} {cca} {t+1}")
 else:
     print(f"Data processing options: y_unit={y_unit}, use_sum={use_sum}")
     results = []
