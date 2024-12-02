@@ -7,14 +7,15 @@ NDArray = npt.NDArray[np.float64]
 
 
 # User-defined options
-target_server = "bokaibi.com"
-target_port = 5142
-total_seconds = 30
-report_interval = 0.1
-ccas = ["cubic", "bpf_cubic", "ebpfccp", "ccp"]
-trials = 10
-y_unit = "snd_cwnd"
-use_sum = False
+target_server = "bokaibi.com" # server running iperf3 in server mode
+target_port = 5142            # iperf3 server port
+total_seconds = 30            # total time to run iperf3
+report_interval = 0.1         # report interval for iperf3
+ccas = ["cubic", "bpf_cubic", "ebpfccp"] # list of CCAs to benchmark, must all be registered
+trials = 10                   # amount of trials to average performance over
+y_unit = "bytes"              
+use_sum = True
+# End of user-defined options
                 
 
 class Result:
