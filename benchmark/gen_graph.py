@@ -11,7 +11,7 @@ target_server = "bokaibi.com" # server running iperf3 in server mode
 target_port = 5142            # iperf3 server port
 total_seconds = 30            # total time to run iperf3
 report_interval = 0.1         # report interval for iperf3
-ccas = ["cubic", "bpf_cubic", "ebpfccp"] # list of CCAs to benchmark, must all be registered
+ccas = ["cubic", "bpf_cubic", "ebpfccp", "ccp"] # list of CCAs to benchmark, must all be registered
 trials = 10                   # amount of trials to average performance over
 y_unit = "bytes"              
 use_sum = True
@@ -68,8 +68,9 @@ if mode == "1":
     print(f"Parameters: target_server={target_server}, target_port={target_port}, total_seconds={total_seconds}, report_interval={report_interval}, trials={trials}")
     default_waittime = 5
     print(f"Expected run time: {trials * (total_seconds + default_waittime) * len(ccas)}")
-    for cca in ccas:
-        os.system(f"sudo bash benchmark.sh {target_server} {target_port} {total_seconds} {report_interval} {cca} {trials}")
+    for t in range(trials):
+        for cca in ccas:
+            os.system(f"sudo bash benchmark.sh {target_server} {target_port} {total_seconds} {report_interval} {cca} 1")
 else:
     print(f"Data processing options: y_unit={y_unit}, use_sum={use_sum}")
     results = []
@@ -127,15 +128,15 @@ else:
     plt.xlabel("Time (s)")
     plt.ylabel(y_unit)
     plt.legend(title = "CCA:")
-    plt.title(f"CCA Performance, averaged over {trials} trials")
-    plt.savefig("CCA Network Perf.png")
+    plt.title(f"CCA Network Behavior")
+    plt.savefig("CCA_Behavior.png")
 
     plt.clf()
     # Plot performance as bar graph
     plt.bar(perf_results.keys(), perf_results.values())
     plt.xlabel("CCA")
     plt.ylabel("CPU Performance (average Python additions)")
-    plt.savefig("CCA CPU Perf.png")
+    plt.savefig("CCA_Performance.png")
 
                 
 
