@@ -191,7 +191,6 @@ impl Manager {
         let tx = skeleton.sender();
         skeleton.poll_create_conn_events(move |event| {
             // A new flow has been created: create a new connection and store it
-            println!("Received create connection event");
 
             // Create a new connection
             let conn = Connection::new(event.sock_addr, tx.clone());
@@ -211,7 +210,6 @@ impl Manager {
         let connections = self.connections.clone();
         skeleton.poll_free_conn_events(move |event| {
             // A connection has been freed: remove it from the map
-            println!("Received free connection event");
             let mut connections = connections.write().unwrap();
             connections.remove(&event.sock_addr);
         })

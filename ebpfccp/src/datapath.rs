@@ -165,7 +165,6 @@ impl Skeleton {
         thread::spawn(move || loop {
             match rx.recv() {
                 Ok(ConnectionMessage::SetCwnd(sock_addr, cwnd)) => {
-                    println!("Setting cwnd for {:?} to {}", sock_addr, cwnd);
                     if let Err(e) = update_connection(skel, sock_addr, |conn| {
                         conn.cwnd = cwnd;
                     }) {
@@ -173,7 +172,6 @@ impl Skeleton {
                     }
                 }
                 Ok(ConnectionMessage::SetRateAbs(sock_addr, rate)) => {
-                    println!("Setting pacing rate for {:?} to {}", sock_addr, rate);
                     if let Err(e) = update_connection(skel, sock_addr, |conn| {
                         conn.pacing_rate = rate;
                     }) {
