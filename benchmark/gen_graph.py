@@ -13,8 +13,8 @@ total_seconds = 30            # total time to run iperf3
 report_interval = 0.1         # report interval for iperf3
 ccas = ["cubic", "bpf_cubic", "ebpfccp", "ccp"] # list of CCAs to benchmark, must all be registered
 trials = 10                   # amount of trials to average performance over
-y_unit = "bytes"              
-use_sum = True
+y_unit = "bits_per_second"              
+use_sum = False
 # End of user-defined options
                 
 
@@ -77,6 +77,7 @@ else:
     perf_results = {}
     for cca in ccas:
         # process each json file for each cca
+        print(cca)
         cca_xs = []
         cca_ys = []
         total_cpu_perf = 0
@@ -104,19 +105,12 @@ else:
                 print(f"Invalid value in {cpu_perf_file}")
                 continue
         max_len = len(max(cca_xs, key=len))
-        print(max_len)
         def pad_length(arr: NDArray) -> NDArray:
             after = np.pad(arr, (0, max_len - len(arr)), constant_values=arr[-1])
-            print(f"Before: {arr.shape}, after: {after.shape}")
             return after
         cca_xs = np.array(list(map(pad_length, cca_xs)))
         cca_ys = np.array(list(map(pad_length, cca_ys)))
         average_xs = np.mean(cca_xs, axis=0)
-        prev = 0
-        for x in average_xs:
-            if x < prev:
-                print(f"Decrease detected: prev: {prev}, curr: {x}")
-            prev = x
         average_ys = np.mean(cca_ys, axis=0)
         results.append(Result(average_xs, average_ys, cca))
         perf_results[cca] = total_cpu_perf / trials
