@@ -20,5 +20,4 @@ iperf3 -c $TARGET_SERVER -p $TARGET_PORT \
 --json --verbose --timestamps --interval $REPORT_INTERVAL \
 --time $TOTAL_SECONDS --logfile "${CCA}_${TRIAL}.json"
 
-echo "Trial $TRIAL for $CCA done, sleeping for 5 seconds"
-sleep 5
+echo "Trial $TRIAL for $CCA done"

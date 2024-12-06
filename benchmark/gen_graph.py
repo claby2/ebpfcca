@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 import json
 import os
+import time
 import numpy as np
 import numpy.typing as npt
 NDArray = npt.NDArray[np.float64]
@@ -9,7 +10,7 @@ NDArray = npt.NDArray[np.float64]
 # User-defined options
 target_server = "bokaibi.com" # server running iperf3 in server mode
 target_port = 5142            # iperf3 server port
-total_seconds = 30            # total time to run iperf3
+total_seconds = 15            # total time to run iperf3
 report_interval = 0.1         # report interval for iperf3
 ccas = ["cubic", "bpf_cubic", "ebpfccp", "ccp"] # list of CCAs to benchmark, must all be registered
 trials = 10                   # amount of trials to average performance over
@@ -66,21 +67,22 @@ if mode == "1":
     # run benchmark
     print("Running the benchmark for the following CCAs: ", ccas)
     print(f"Parameters: target_server={target_server}, target_port={target_port}, total_seconds={total_seconds}, report_interval={report_interval}, trials={trials}")
-    default_waittime = 5
-    print(f"Expected run time: {trials * (total_seconds + default_waittime) * len(ccas)}")
+    default_waittime = 0.5
+    print(f"Expected run time: {trials * (total_seconds + default_waittime) * len(ccas)} seconds")
     for t in range(trials):
         for cca in ccas:
             os.system(f"sudo bash benchmark.sh {target_server} {target_port} {total_seconds} {report_interval} {cca} {t+1}")
+            time.sleep(default_waittime)
 else:
     print(f"Data processing options: y_unit={y_unit}, use_sum={use_sum}")
     results = []
     perf_results = {}
+    max_perf = 0
     for cca in ccas:
         # process each json file for each cca
-        print(cca)
         cca_xs = []
         cca_ys = []
-        total_cpu_perf = 0
+        all_cpu_perf = []
         for trial in range(1, trials+1):
             file = os.path.join(os.getcwd(), f"{cca}_{trial}.json")
             try:
@@ -97,7 +99,8 @@ else:
             try:
                 with open(cpu_perf_file, "r") as f:
                     cpu_perf = int(f.read())
-                    total_cpu_perf += cpu_perf
+                    all_cpu_perf.append(cpu_perf)
+                    max_perf = max(max_perf, cpu_perf)
             except FileNotFoundError:
                 print(f"File {cpu_perf_file} not found")
                 continue
@@ -113,7 +116,7 @@ else:
         average_xs = np.mean(cca_xs, axis=0)
         average_ys = np.mean(cca_ys, axis=0)
         results.append(Result(average_xs, average_ys, cca))
-        perf_results[cca] = total_cpu_perf / trials
+        perf_results[cca] = all_cpu_perf
 
     # Plot the graph
     for result in results:
@@ -127,7 +130,8 @@ else:
 
     plt.clf()
     # Plot performance as bar graph
-    plt.bar(perf_results.keys(), perf_results.values())
+    plt.boxplot(perf_results.values(), labels=perf_results.keys())
+    plt.ylim(0, max_perf)
     plt.xlabel("CCA")
     plt.ylabel("CPU Performance (average Python additions)")
     plt.savefig("CCA_Performance.png")
