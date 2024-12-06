@@ -13,7 +13,7 @@ target_port = 5142            # iperf3 server port
 total_seconds = 15            # total time to run iperf3
 report_interval = 0.1         # report interval for iperf3
 ccas = ["cubic", "bpf_cubic", "ebpfccp", "ccp"] # list of CCAs to benchmark, must all be registered
-trials = 10                   # amount of trials to average performance over
+trials = 20                   # amount of trials to average performance over
 y_unit = "bits_per_second"              
 use_sum = False
 # End of user-defined options
