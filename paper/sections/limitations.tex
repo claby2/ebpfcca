@@ -1,4 +1,5 @@
 \documentclass[../main.tex]{subfiles}
 \begin{document}
-Limitations
+
+One limitation that eBPFCCP faces is that it currently introduces another layer of indirection via BPF maps and ring buffers on top of the existing IPC mechanism. Future work could explore how to integrate eBPFCCP into the CCP agent, removing the need to communicate between two separate user space programs. We envision this work is made easier since both the user spaec component of eBPFCCP and Portus are written in Rust.
 \end{document}

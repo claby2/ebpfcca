@@ -15,12 +15,12 @@ Conventionally, CCP datapath program implementations such as Linux kernel's TCP 
 
 \subsection{eBPF Implementation}
 
-Due to the eBPF's intense verifier requirements and stipulations, running \texttt{libccp} within the eBPF program was deemed difficult.
+Due to eBPF's intense verifier requirements and stipulations, running \texttt{libccp} within the eBPF program was deemed difficult.
 Consequently, we create a user space layer between the CCP agent and the Linux kernel's TCP stack, called eBPFCCP.
 
 eBPFCCP is written in Rust and runs \texttt{libccp} in user space to communicate with the CCP agent while also managing and communicating with the eBPF-based datapath program.
 eBPFCCP's role is to collect primitive congestion signals from the eBPF program, send them over to the CCP agent, and execute instructions sent by the CCP agent to influence TCP behavior.
-As shown in Figure~\ref{fig:ebpfccp}, eBPFCCP communicates with the CCP agent via Unix-domain sockets and interfaces with the eBPF datapath program using BPF hash maps and BPF ring buffers.
+As shown in Figure~\ref{fig:ebpfccp}, eBPFCCP communicates with the CCP agent via Unix-domain sockets as its IPC mechanism and interfaces with the eBPF datapath program through BPF hash maps and BPF ring buffers.
 
 \begin{figure}[t]
 \centering
@@ -33,9 +33,9 @@ On the eBPF datapath side, we use eBPF's \texttt{struct\_ops} API to attach cong
 Each of these hooks operate on a per-flow basis.
 When a new flow is created, the eBPF datapath program records the flow's information in a BPF ring buffer called \texttt{create\_conn\_events}.
 This signals eBPFCCP to retrieve the new flow's information and pass it to the CCP agent.
-Similarly, when a flow is terminated, the eBPF datapath program writes an event to the \texttt{free\_conn\_events} ring buffer, which eBPFCCP reads to perform flow cleanup actions.
+Similarly, when a flow is terminated, the eBPF datapath program writes an event to the \texttt{free\_conn\_events} ring buffer, which eBPFCCP then reads to perform flow cleanup actions.
 As new ACKs arrive, the eBPF datapath program reads the TCP state and calculates primitive congestion signals, which are then written to the \texttt{signals} ring buffer, read by eBPFCCP, and sent to the CCP agent.
-Then, the message the CCP agent sends back to the eBPFCCP pertaining to window size and pacing rate is written to the \texttt{connections} hash map, which the eBPF datapath program reads and updates the TCP state accordingly.
+Then, messages pertaining to congestion window size and sending rate are written to the \texttt{connections} hash map.
 The BPF maps used by the eBPF datapath and eBPFCCP are summarized in Table~\ref{tab:maptable}.
 
 \begin{table}[htbp]
@@ -66,6 +66,6 @@ The BPF maps used by the eBPF datapath and eBPFCCP are summarized in Table~\ref{
     \label{tab:maptable}
 \end{table}
 
-Overall, the eBPFCCP aims to act as a bridge between the CCP agent and the eBPF datapath program.
+Overall, eBPFCCP aims to act as a bridge between the CCP agent and the eBPF datapath program.
 
 \end{document}
